@@ -223,7 +223,7 @@ function LoginScreen() {
       {erro ? <Text style={s.loginErro}>{erro}</Text> : null}
 
       <TouchableOpacity
-        style={[s.btnSalvar, { marginTop: 20 }, carregando && { opacity: 0.6 }]}
+        style={[s.loginBotao, carregando && { opacity: 0.6 }]}
         onPress={entrar}
         disabled={carregando}
       >
@@ -875,5 +875,6 @@ const s = StyleSheet.create({
   loginTitulo: { fontSize: 24, fontWeight: '700', color: '#1a5276', textAlign: 'center' },
   loginSub: { fontSize: 14, color: '#888', textAlign: 'center', marginTop: 6, marginBottom: 10 },
   loginErro: { color: '#e74c3c', fontSize: 13, marginTop: 12, textAlign: 'center' },
+  loginBotao: { backgroundColor: '#1a5276', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 20 },
   loginLink: { color: '#1a5276', fontSize: 13, fontWeight: '500' },
 });
