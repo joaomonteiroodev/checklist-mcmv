@@ -1,7 +1,6 @@
 # ✅ Checklist MCMV
 
-Aplicativo web para corretores de imóveis gerenciarem e acompanharem 
-a documentação necessária para financiamentos pelo programa 
+Aplicativo web para corretores de imóveis gerenciarem e acompanharem a documentação necessária para financiamentos pelo programa 
 **Minha Casa Minha Vida (MCMV)**.
 
 ## 🚀 Acesse o app
