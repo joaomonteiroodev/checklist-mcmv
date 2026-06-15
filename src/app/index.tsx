@@ -1,18 +1,42 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useState } from 'react';
-import { Linking, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  Linking,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
+
+// ─── TIPOS ───────────────────────────────────────────────────────────────────
 
 type Perfil = 'CLT' | 'Autônomo' | 'Func. Público';
+
+interface Documento {
+  id: number;
+  nome: string;
+  sub: string;
+  entregue: boolean;
+  observacao: string;
+  arquivoBase64?: string;
+  arquivoNome?: string;
+}
 
 interface Cliente {
   id: number;
   nome: string;
+  telefone: string;
   perfil: Perfil;
   renda: number;
   faixa: string;
-  entregues: number;
-  total: number;
+  docs: Documento[];
 }
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 function calcularFaixa(renda: number): string {
   if (renda <= 3200) return '1';
@@ -22,7 +46,7 @@ function calcularFaixa(renda: number): string {
   return 'Fora do MCMV';
 }
 
-function getDocsPorPerfil(perfil: Perfil) {
+function getDocsPorPerfil(perfil: Perfil): Omit<Documento, 'entregue' | 'observacao'>[] {
   const comuns = [
     { id: 1, nome: 'RG e CPF', sub: 'Documento de identificação' },
     { id: 2, nome: 'Certidão de Casamento | Nascimento | Óbito', sub: 'Conforme estado civil' },
@@ -43,7 +67,6 @@ function getDocsPorPerfil(perfil: Perfil) {
       { id: 8, nome: 'Tela do FGTS', sub: 'Print ou cópia da tela' },
     ];
   }
-
   if (perfil === 'Autônomo') {
     return [
       ...comuns.slice(0, 3),
@@ -56,7 +79,6 @@ function getDocsPorPerfil(perfil: Perfil) {
       { id: 10, nome: 'Imposto de renda', sub: 'Se declarar' },
     ];
   }
-
   if (perfil === 'Func. Público') {
     return [
       ...comuns.slice(0, 3),
@@ -67,43 +89,83 @@ function getDocsPorPerfil(perfil: Perfil) {
       { id: 8, nome: 'Imposto de renda', sub: 'Se declarar' },
     ];
   }
-
   return comuns;
 }
 
+function inicializarDocs(perfil: Perfil): Documento[] {
+  return getDocsPorPerfil(perfil).map(d => ({
+    ...d,
+    entregue: false,
+    observacao: '',
+  }));
+}
+
+function formatarTelefoneWA(tel: string): string {
+  const digits = tel.replace(/\D/g, '');
+  if (digits.startsWith('55')) return digits;
+  return '55' + digits;
+}
+
+// ─── DADOS INICIAIS ───────────────────────────────────────────────────────────
+
 const clientesIniciais: Cliente[] = [
-  { id: 1, nome: 'Maria da Silva', perfil: 'CLT', renda: 3200, faixa: calcularFaixa(3200), total: 8, entregues: 4 },
-  { id: 2, nome: 'José Oliveira', perfil: 'Autônomo', renda: 1800, faixa: calcularFaixa(1800), total: 10, entregues: 6 },
-  { id: 3, nome: 'Ana Mendes', perfil: 'CLT', renda: 5000, faixa: calcularFaixa(5000), total: 8, entregues: 8 },
+  {
+    id: 1,
+    nome: 'Maria da Silva',
+    telefone: '',
+    perfil: 'CLT',
+    renda: 3200,
+    faixa: calcularFaixa(3200),
+    docs: inicializarDocs('CLT').map((d, i) => ({ ...d, entregue: i < 4 })),
+  },
+  {
+    id: 2,
+    nome: 'José Oliveira',
+    telefone: '',
+    perfil: 'Autônomo',
+    renda: 1800,
+    faixa: calcularFaixa(1800),
+    docs: inicializarDocs('Autônomo').map((d, i) => ({ ...d, entregue: i < 6 })),
+  },
+  {
+    id: 3,
+    nome: 'Ana Mendes',
+    telefone: '',
+    perfil: 'CLT',
+    renda: 5000,
+    faixa: calcularFaixa(5000),
+    docs: inicializarDocs('CLT').map(d => ({ ...d, entregue: true })),
+  },
 ];
 
+// ─── TELA PRINCIPAL ───────────────────────────────────────────────────────────
+
 export default function HomeScreen() {
-  const [tela, setTela] = useState('lista');
+  const [tela, setTela] = useState<'lista' | 'checklist'>('lista');
   const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [clienteSelecionado, setClienteSelecionado] = useState<Cliente>(clientesIniciais[0]);
+  const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(null);
   const [modalAberto, setModalAberto] = useState(false);
   const [carregando, setCarregando] = useState(true);
 
   const [novoNome, setNovoNome] = useState('');
+  const [novoTelefone, setNovoTelefone] = useState('');
   const [novoPerfil, setNovoPerfil] = useState<Perfil>('CLT');
   const [novaRenda, setNovaRenda] = useState('');
 
   const faixaPreview = novaRenda ? calcularFaixa(parseFloat(novaRenda.replace(',', '.'))) : null;
 
-  useEffect(() => {
-    carregarClientes();
-  }, []);
+  useEffect(() => { carregarClientes(); }, []);
 
   async function carregarClientes() {
     try {
-      const dados = await AsyncStorage.getItem('clientes');
+      const dados = await AsyncStorage.getItem('clientes_v2');
       if (dados) {
         setClientes(JSON.parse(dados));
       } else {
         setClientes(clientesIniciais);
-        await AsyncStorage.setItem('clientes', JSON.stringify(clientesIniciais));
+        await AsyncStorage.setItem('clientes_v2', JSON.stringify(clientesIniciais));
       }
-    } catch (e) {
+    } catch {
       setClientes(clientesIniciais);
     } finally {
       setCarregando(false);
@@ -112,7 +174,7 @@ export default function HomeScreen() {
 
   async function salvarClientes(lista: Cliente[]) {
     try {
-      await AsyncStorage.setItem('clientes', JSON.stringify(lista));
+      await AsyncStorage.setItem('clientes_v2', JSON.stringify(lista));
     } catch (e) {
       console.log('Erro ao salvar:', e);
     }
@@ -128,29 +190,30 @@ export default function HomeScreen() {
     const renda = parseFloat(novaRenda.replace(',', '.'));
     if (isNaN(renda) || renda <= 0) return;
     const faixa = calcularFaixa(renda);
-    const docs = getDocsPorPerfil(novoPerfil);
     const novo: Cliente = {
       id: Date.now(),
       nome: novoNome.trim(),
+      telefone: novoTelefone.trim(),
       perfil: novoPerfil,
       renda,
       faixa,
-      total: docs.length,
-      entregues: 0,
+      docs: inicializarDocs(novoPerfil),
     };
     const novaLista = [...clientes, novo];
     setClientes(novaLista);
     salvarClientes(novaLista);
     setNovoNome('');
+    setNovoTelefone('');
     setNovoPerfil('CLT');
     setNovaRenda('');
     setModalAberto(false);
   }
 
-  function atualizarEntregues(id: number, entregues: number) {
-    const novaLista = clientes.map(c => c.id === id ? { ...c, entregues } : c);
+  function atualizarCliente(clienteAtualizado: Cliente) {
+    const novaLista = clientes.map(c => c.id === clienteAtualizado.id ? clienteAtualizado : c);
     setClientes(novaLista);
     salvarClientes(novaLista);
+    setClienteSelecionado(clienteAtualizado);
   }
 
   if (carregando) {
@@ -161,12 +224,12 @@ export default function HomeScreen() {
     );
   }
 
-  if (tela === 'checklist') {
+  if (tela === 'checklist' && clienteSelecionado) {
     return (
       <ChecklistScreen
         cliente={clienteSelecionado}
         voltar={() => setTela('lista')}
-        onAtualizar={(entregues) => atualizarEntregues(clienteSelecionado.id, entregues)}
+        onAtualizar={atualizarCliente}
       />
     );
   }
@@ -188,7 +251,10 @@ export default function HomeScreen() {
       <ScrollView style={s.scroll}>
         <Text style={s.secao}>Clientes ({clientes.length})</Text>
         {clientes.map(c => {
-          const pct = Math.round((c.entregues / c.total) * 100);
+          const entregues = c.docs.filter(d => d.entregue).length;
+          const total = c.docs.length;
+          const pct = Math.round((entregues / total) * 100);
+          const pendentes = total - entregues;
           const foraDoMCMV = c.faixa === 'Fora do MCMV';
           return (
             <TouchableOpacity key={c.id} style={s.card} onPress={() => abrirCliente(c)}>
@@ -200,7 +266,7 @@ export default function HomeScreen() {
               <View style={s.cardInfo}>
                 <Text style={s.cardNome}>{c.nome}</Text>
                 <Text style={s.cardPerfil}>
-                  {c.perfil} · {foraDoMCMV ? 'Fora do MCMV' : `Faixa ${c.faixa}`} · {c.total - c.entregues} pendentes
+                  {c.perfil} · {foraDoMCMV ? 'Fora do MCMV' : `Faixa ${c.faixa}`} · {pendentes} pendentes
                 </Text>
               </View>
               <Text style={[s.pct, pct === 100 && { color: '#2ecc71' }, foraDoMCMV && { color: '#e74c3c' }]}>
@@ -222,6 +288,16 @@ export default function HomeScreen() {
               placeholder="Ex: João da Silva"
               value={novoNome}
               onChangeText={setNovoNome}
+              placeholderTextColor="#aaa"
+            />
+
+            <Text style={s.label}>Telefone (WhatsApp)</Text>
+            <TextInput
+              style={s.input}
+              placeholder="Ex: 81999990000"
+              value={novoTelefone}
+              onChangeText={setNovoTelefone}
+              keyboardType="phone-pad"
               placeholderTextColor="#aaa"
             />
 
@@ -253,7 +329,7 @@ export default function HomeScreen() {
                 <Text style={[s.faixaTexto, faixaPreview === 'Fora do MCMV' ? s.faixaTextoErro : s.faixaTextoOk]}>
                   {faixaPreview === 'Fora do MCMV'
                     ? 'Renda acima do limite do MCMV (R$ 13.000)'
-                    : `Faixa ${faixaPreview} — cliente elegivel ao MCMV`}
+                    : `Faixa ${faixaPreview} — cliente elegível ao MCMV`}
                 </Text>
               </View>
             )}
@@ -273,39 +349,154 @@ export default function HomeScreen() {
   );
 }
 
-function ChecklistScreen({ cliente, voltar, onAtualizar }: {
+// ─── TELA CHECKLIST ───────────────────────────────────────────────────────────
+
+function ChecklistScreen({
+  cliente,
+  voltar,
+  onAtualizar,
+}: {
   cliente: Cliente;
   voltar: () => void;
-  onAtualizar: (entregues: number) => void;
+  onAtualizar: (c: Cliente) => void;
 }) {
-  const docs = getDocsPorPerfil(cliente.perfil).map((d, i) => ({
-    ...d,
-    entregue: cliente.entregues > i,
-  }));
+  const [docs, setDocs] = useState<Documento[]>(cliente.docs);
+  const [modalObs, setModalObs] = useState<number | null>(null);
+  const [obsTexto, setObsTexto] = useState('');
+  const [emailModal, setEmailModal] = useState(false);
+  const [emailDestino, setEmailDestino] = useState('');
+  const [enviandoEmail, setEnviandoEmail] = useState(false);
 
-  const [status, setStatus] = useState(docs.map(d => d.entregue));
-  const entregues = status.filter(Boolean).length;
+  const entregues = docs.filter(d => d.entregue).length;
   const pct = Math.round((entregues / docs.length) * 100);
 
+  function salvar(novosDocs: Documento[]) {
+    setDocs(novosDocs);
+    onAtualizar({ ...cliente, docs: novosDocs });
+  }
+
   function toggle(i: number) {
-    const novo = [...status];
-    novo[i] = !novo[i];
-    setStatus(novo);
-    onAtualizar(novo.filter(Boolean).length);
+    const novo = docs.map((d, idx) => idx === i ? { ...d, entregue: !d.entregue } : d);
+    salvar(novo);
+  }
+
+  function abrirObs(i: number) {
+    setObsTexto(docs[i].observacao);
+    setModalObs(i);
+  }
+
+  function salvarObs() {
+    if (modalObs === null) return;
+    const novo = docs.map((d, i) => i === modalObs ? { ...d, observacao: obsTexto } : d);
+    salvar(novo);
+    setModalObs(null);
+  }
+
+  function abrirUpload(i: number) {
+    if (Platform.OS === 'web') {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/png,image/jpeg,image/jpg';
+      input.onchange = async (e: any) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = reader.result as string;
+          const novo = docs.map((d, idx) =>
+            idx === i ? { ...d, arquivoBase64: base64, arquivoNome: file.name } : d
+          );
+          salvar(novo);
+        };
+        reader.readAsDataURL(file);
+      };
+      input.click();
+    }
+  }
+
+  function baixarImagem(doc: Documento) {
+    if (!doc.arquivoBase64 || Platform.OS !== 'web') return;
+    const a = document.createElement('a');
+    a.href = doc.arquivoBase64;
+    a.download = `${doc.nome.replace(/\s+/g, '_')}.png`;
+    a.click();
+  }
+
+  async function enviarEmail() {
+    if (!emailDestino.trim()) return;
+    setEnviandoEmail(true);
+
+    const docsEntregues = docs.filter(d => d.entregue);
+    const docsPendentes = docs.filter(d => !d.entregue);
+
+    const corpo =
+      `Documentação MCMV — ${cliente.nome}\n\n` +
+      `Perfil: ${cliente.perfil} | Faixa ${cliente.faixa} | Renda R$ ${cliente.renda.toLocaleString('pt-BR')}\n\n` +
+      `✅ Documentos entregues (${docsEntregues.length}):\n` +
+      docsEntregues.map(d => `  • ${d.nome}`).join('\n') +
+      (docsPendentes.length > 0
+        ? `\n\n⏳ Documentos pendentes (${docsPendentes.length}):\n` +
+          docsPendentes.map(d => `  • ${d.nome}`).join('\n')
+        : '\n\nTodos os documentos foram entregues! ✅');
+
+    // ── CONFIGURE AQUI O EMAILJS ──────────────────────────────────────────────
+    // 1. Crie conta grátis em https://emailjs.com
+    // 2. Crie um serviço (Gmail) e um template
+    // 3. No template use as variáveis: {{to_email}}, {{cliente_nome}}, {{corpo}}
+    // 4. Substitua os valores abaixo:
+    const EMAILJS_SERVICE_ID = 'SEU_SERVICE_ID';
+    const EMAILJS_TEMPLATE_ID = 'SEU_TEMPLATE_ID';
+    const EMAILJS_PUBLIC_KEY = 'SUA_PUBLIC_KEY';
+    // ─────────────────────────────────────────────────────────────────────────
+
+    try {
+      const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          service_id: EMAILJS_SERVICE_ID,
+          template_id: EMAILJS_TEMPLATE_ID,
+          user_id: EMAILJS_PUBLIC_KEY,
+          template_params: {
+            to_email: emailDestino,
+            cliente_nome: cliente.nome,
+            corpo,
+          },
+        }),
+      });
+      if (res.ok) {
+        alert('E-mail enviado com sucesso!');
+        setEmailModal(false);
+        setEmailDestino('');
+      } else {
+        alert('Erro ao enviar. Verifique as configurações do EmailJS.');
+      }
+    } catch {
+      alert('Erro de conexão ao tentar enviar o e-mail.');
+    } finally {
+      setEnviandoEmail(false);
+    }
   }
 
   function enviarWhatsApp() {
-    const pendentes = docs.filter((_, i) => !status[i]).map(d => `- ${d.nome}`);
+    const pendentes = docs.filter(d => !d.entregue).map(d => `- ${d.nome}`);
+    const numero = cliente.telefone ? formatarTelefoneWA(cliente.telefone) : '';
+    const base = numero ? `https://wa.me/${numero}` : 'https://wa.me/';
+
     if (pendentes.length === 0) {
-      Linking.openURL(`https://wa.me/?text=${encodeURIComponent(`Ola ${cliente.nome}! Todos os seus documentos ja foram entregues. Em breve entraremos em contato com os proximos passos do seu financiamento pelo MCMV.`)}`);
+      Linking.openURL(`${base}?text=${encodeURIComponent(
+        `Olá ${cliente.nome}! Todos os seus documentos já foram entregues. Em breve entraremos em contato com os próximos passos do seu financiamento pelo MCMV.`
+      )}`);
       return;
     }
+
     const mensagem =
-      `Ola ${cliente.nome}, tudo bem?\n\n` +
-      `Estou verificando a documentacao do seu financiamento pelo Minha Casa, Minha Vida e ainda precisamos dos seguintes documentos:\n\n` +
+      `Olá ${cliente.nome}, tudo bem?\n\n` +
+      `Estou verificando a documentação do seu financiamento pelo Minha Casa, Minha Vida e ainda precisamos dos seguintes documentos:\n\n` +
       `${pendentes.join('\n')}\n\n` +
-      `Assim que tiver, pode me enviar por aqui mesmo ou trazer pessoalmente. Qualquer duvida estou a disposicao.`;
-    Linking.openURL(`https://wa.me/?text=${encodeURIComponent(mensagem)}`);
+      `Assim que tiver, pode me enviar por aqui mesmo ou trazer pessoalmente. Qualquer dúvida estou à disposição.`;
+
+    Linking.openURL(`${base}?text=${encodeURIComponent(mensagem)}`);
   }
 
   return (
@@ -318,6 +509,9 @@ function ChecklistScreen({ cliente, voltar, onAtualizar }: {
         <Text style={s.headerSub}>
           {cliente.perfil} · Faixa {cliente.faixa} · Renda R$ {cliente.renda.toLocaleString('pt-BR')}
         </Text>
+        {cliente.telefone ? (
+          <Text style={[s.headerSub, { marginTop: 2 }]}>📱 {cliente.telefone}</Text>
+        ) : null}
         <View style={s.barraFundo}>
           <View style={[s.barraFill, { width: `${pct}%` as any }]} />
         </View>
@@ -329,32 +523,131 @@ function ChecklistScreen({ cliente, voltar, onAtualizar }: {
 
       <ScrollView style={s.scroll}>
         <Text style={s.secao}>Documentos</Text>
+
         {docs.map((doc, i) => (
-          <TouchableOpacity key={doc.id} style={s.docItem} onPress={() => toggle(i)}>
-            <View style={[s.circulo, status[i] && s.circuloOk]}>
-              {status[i] && <Text style={s.check}>✓</Text>}
+          <View key={doc.id} style={s.docCard}>
+            <TouchableOpacity style={s.docItem} onPress={() => toggle(i)}>
+              <View style={[s.circulo, doc.entregue && s.circuloOk]}>
+                {doc.entregue && <Text style={s.check}>✓</Text>}
+              </View>
+              <View style={s.docInfo}>
+                <Text style={s.docNome}>{doc.nome}</Text>
+                <Text style={s.docSub}>{doc.sub}</Text>
+              </View>
+              <View style={[s.badge, doc.entregue ? s.badgeOk : s.badgePend]}>
+                <Text style={[s.badgeTexto, doc.entregue ? s.badgeTextoOk : s.badgeTextoPend]}>
+                  {doc.entregue ? 'Entregue' : 'Pendente'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            <View style={s.docAcoes}>
+              <TouchableOpacity style={s.btnAcao} onPress={() => abrirObs(i)}>
+                <Text style={s.btnAcaoTexto}>{doc.observacao ? '📝 Ver obs.' : '📝 Anotar'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.btnAcao} onPress={() => abrirUpload(i)}>
+                <Text style={s.btnAcaoTexto}>{doc.arquivoBase64 ? '🖼 Trocar imagem' : '📎 Anexar'}</Text>
+              </TouchableOpacity>
+              {doc.arquivoBase64 && (
+                <TouchableOpacity style={s.btnAcao} onPress={() => baixarImagem(doc)}>
+                  <Text style={s.btnAcaoTexto}>⬇ Baixar</Text>
+                </TouchableOpacity>
+              )}
             </View>
-            <View style={s.docInfo}>
-              <Text style={s.docNome}>{doc.nome}</Text>
-              <Text style={s.docSub}>{doc.sub}</Text>
-            </View>
-            <View style={[s.badge, status[i] ? s.badgeOk : s.badgePend]}>
-              <Text style={[s.badgeTexto, status[i] ? s.badgeTextoOk : s.badgeTextoPend]}>
-                {status[i] ? 'Entregue' : 'Pendente'}
-              </Text>
-            </View>
-          </TouchableOpacity>
+
+            {doc.observacao ? (
+              <View style={s.obsBox}>
+                <Text style={s.obsTexto}>💬 {doc.observacao}</Text>
+              </View>
+            ) : null}
+
+            {doc.arquivoBase64 && Platform.OS === 'web' && (
+              <View style={s.imgPreviewBox}>
+                <img
+                  src={doc.arquivoBase64}
+                  alt={doc.nome}
+                  style={{ width: '100%', maxHeight: 120, objectFit: 'contain', borderRadius: 8 }}
+                />
+              </View>
+            )}
+          </View>
         ))}
 
         <TouchableOpacity style={s.btnWhatsApp} onPress={enviarWhatsApp}>
           <Text style={s.btnWhatsAppTexto}>
-            {entregues === docs.length ? 'Enviar parabens ao cliente' : 'Enviar pendencias pelo WhatsApp'}
+            {entregues === docs.length ? '🎉 Enviar parabéns ao cliente' : '💬 Enviar pendências pelo WhatsApp'}
           </Text>
         </TouchableOpacity>
+
+        <TouchableOpacity style={s.btnEmail} onPress={() => setEmailModal(true)}>
+          <Text style={s.btnEmailTexto}>📧 Enviar documentação por e-mail</Text>
+        </TouchableOpacity>
       </ScrollView>
+
+      {/* Modal Observação */}
+      <Modal visible={modalObs !== null} animationType="slide" transparent>
+        <View style={s.modalFundo}>
+          <View style={s.modalBox}>
+            <Text style={s.modalTitulo}>{modalObs !== null ? docs[modalObs]?.nome : ''}</Text>
+            <Text style={s.label}>Observação</Text>
+            <TextInput
+              style={[s.input, { height: 100, textAlignVertical: 'top' }]}
+              placeholder="Ex: Cliente vai trazer na sexta-feira..."
+              value={obsTexto}
+              onChangeText={setObsTexto}
+              multiline
+              placeholderTextColor="#aaa"
+            />
+            <View style={s.modalBotoes}>
+              <TouchableOpacity style={s.btnCancelar} onPress={() => setModalObs(null)}>
+                <Text style={s.btnCancelarTexto}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.btnSalvar} onPress={salvarObs}>
+                <Text style={s.btnSalvarTexto}>Salvar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal E-mail */}
+      <Modal visible={emailModal} animationType="slide" transparent>
+        <View style={s.modalFundo}>
+          <View style={s.modalBox}>
+            <Text style={s.modalTitulo}>Enviar por e-mail</Text>
+            <Text style={s.label}>E-mail do destinatário</Text>
+            <TextInput
+              style={s.input}
+              placeholder="Ex: cliente@email.com"
+              value={emailDestino}
+              onChangeText={setEmailDestino}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              placeholderTextColor="#aaa"
+            />
+            <Text style={{ fontSize: 12, color: '#888', marginTop: 8 }}>
+              Será enviado um resumo com os documentos entregues e pendentes.
+            </Text>
+            <View style={s.modalBotoes}>
+              <TouchableOpacity style={s.btnCancelar} onPress={() => setEmailModal(false)}>
+                <Text style={s.btnCancelarTexto}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.btnSalvar, enviandoEmail && { opacity: 0.6 }]}
+                onPress={enviarEmail}
+                disabled={enviandoEmail}
+              >
+                <Text style={s.btnSalvarTexto}>{enviandoEmail ? 'Enviando...' : 'Enviar'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
+
+// ─── ESTILOS ──────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
@@ -378,7 +671,14 @@ const s = StyleSheet.create({
   cardNome: { fontSize: 14, fontWeight: '600', color: '#222' },
   cardPerfil: { fontSize: 12, color: '#888', marginTop: 2 },
   pct: { fontSize: 13, fontWeight: '600', color: '#1a5276' },
-  docItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 8, gap: 12 },
+  docCard: { backgroundColor: '#fff', borderRadius: 12, marginBottom: 8, overflow: 'hidden' },
+  docItem: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 },
+  docAcoes: { flexDirection: 'row', paddingHorizontal: 14, paddingBottom: 10, gap: 8 },
+  btnAcao: { backgroundColor: '#f0f0f0', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  btnAcaoTexto: { fontSize: 11, color: '#555', fontWeight: '500' },
+  obsBox: { backgroundColor: '#fffbea', paddingHorizontal: 14, paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#f0e68c' },
+  obsTexto: { fontSize: 12, color: '#7d6608' },
+  imgPreviewBox: { padding: 10, borderTopWidth: 1, borderTopColor: '#eee' },
   circulo: { width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, borderColor: '#ccc', alignItems: 'center', justifyContent: 'center' },
   circuloOk: { backgroundColor: '#2ecc71', borderColor: '#2ecc71' },
   check: { color: '#fff', fontSize: 13, fontWeight: '700' },
@@ -391,8 +691,10 @@ const s = StyleSheet.create({
   badgeTexto: { fontSize: 11, fontWeight: '500' },
   badgeTextoOk: { color: '#1e8449' },
   badgeTextoPend: { color: '#d68910' },
-  btnWhatsApp: { backgroundColor: '#25D366', borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 8, marginBottom: 32 },
+  btnWhatsApp: { backgroundColor: '#25D366', borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 8 },
   btnWhatsAppTexto: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  btnEmail: { backgroundColor: '#2980b9', borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 10, marginBottom: 32 },
+  btnEmailTexto: { color: '#fff', fontSize: 15, fontWeight: '600' },
   modalFundo: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalBox: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24 },
   modalTitulo: { fontSize: 18, fontWeight: '600', color: '#222', marginBottom: 20 },
