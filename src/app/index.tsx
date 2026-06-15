@@ -348,18 +348,77 @@ function ChecklistScreen({ cliente, voltar, onAtualizar }: {
   try {
     for (const doc of docsComArquivo) {
       if (!doc.arquivoBase64) continue;
+
+      const img = new window.Image();
+      await new Promise<void>((resolve) => { img.onload = () => resolve(); img.src = doc.arquivoBase64!; });
+
+      // Dimensões A4 em pixels a 96dpi
+      const A4_W = 794;
+      const A4_H = 1123;
+      const canvas = document.createElement('canvas');
+      canvas.width = A4_W;
+      canvas.height = A4_H;
+      const ctx = canvas.getContext('2d')!;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, A4_W, A4_H);
+
+      const ratio = Math.min(A4_W / img.width, A4_H / img.height);
+      const w = img.width * ratio;
+      const h = img.height * ratio;
+      const x = (A4_W - w) / 2;
+      const y = (A4_H - h) / 2;
+      ctx.drawImage(img, x, y, w, h);
+
+      // Canvas → PDF via data URL trick
+      const imgData = canvas.toDataURL('image/jpeg', 0.92);
+      
+      // Gera PDF manualmente (formato mínimo válido)
+      const pdfContent = gerarPDFSimples(imgData, A4_W, A4_H);
+      const blob = new Blob([pdfContent], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = doc.arquivoBase64;
-      const ext = doc.arquivoBase64.includes('image/png') ? 'png' : 'jpg';
-      a.download = `${cliente.nome.replace(/\s+/g, '_')}_${doc.nome.replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`;
+      a.href = url;
+      a.download = `${cliente.nome.replace(/\s+/g, '_')}_${doc.nome.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
       a.click();
-      await new Promise(r => setTimeout(r, 300));
+      URL.revokeObjectURL(url);
+      await new Promise(r => setTimeout(r, 400));
     }
+    alert('Documentos baixados com sucesso!');
   } catch (err) {
-    alert('Erro ao baixar os arquivos.');
+    console.error(err);
+    alert('Erro ao gerar os PDFs.');
   } finally {
     setBaixandoZip(false);
   }
+}
+
+function gerarPDFSimples(jpegDataUrl: string, largura: number, altura: number): Uint8Array {
+  const base64 = jpegDataUrl.split(',')[1];
+  const imgBytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+  const imgLen = imgBytes.length;
+  const w = (largura * 72 / 96).toFixed(2);
+  const h = (altura * 72 / 96).toFixed(2);
+
+  const enc = new TextEncoder();
+  const obj1 = enc.encode('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+  const obj2 = enc.encode('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n');
+  const obj3 = enc.encode(`3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${w} ${h}] /Contents 4 0 R /Resources << /XObject << /Im1 5 0 R >> >> >>\nendobj\n`);
+  const obj4 = enc.encode(`4 0 obj\n<< /Length 32 >>\nstream\nq ${w} 0 0 ${h} 0 0 cm /Im1 Do Q\nendstream\nendobj\n`);
+  const obj5Header = enc.encode(`5 0 obj\n<< /Type /XObject /Subtype /Image /Width ${largura} /Height ${altura} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imgLen} >>\nstream\n`);
+  const obj5Footer = enc.encode('\nendstream\nendobj\n');
+
+  const header = enc.encode('%PDF-1.4\n');
+  const parts = [header, obj1, obj2, obj3, obj4, obj5Header, imgBytes, obj5Footer];
+  const totalLen = parts.reduce((a, b) => a + b.length, 0);
+  const result = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const p of parts) { result.set(p, offset); offset += p.length; }
+
+  const xref = `xref\n0 6\n0000000000 65535 f \n${String(header.length).padStart(10, '0')} 00000 n \ntrailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${totalLen}\n%%EOF`;
+  const xrefBytes = enc.encode(xref);
+  const final = new Uint8Array(totalLen + xrefBytes.length);
+  final.set(result); final.set(xrefBytes, totalLen);
+  return final;
 }
 
   async function enviarEmail() {
