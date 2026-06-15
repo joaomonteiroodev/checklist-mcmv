@@ -9,7 +9,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from 'react-native';
 
 // ─── TIPOS ───────────────────────────────────────────────────────────────────
@@ -33,6 +33,7 @@ interface Cliente {
   perfil: Perfil;
   renda: number;
   faixa: string;
+  empreendimento: string;
   docs: Documento[];
 }
 
@@ -116,6 +117,7 @@ const clientesIniciais: Cliente[] = [
     perfil: 'CLT',
     renda: 3200,
     faixa: calcularFaixa(3200),
+    empreendimento: 'Mirante Belvedere',
     docs: inicializarDocs('CLT').map((d, i) => ({ ...d, entregue: i < 4 })),
   },
   {
@@ -125,6 +127,7 @@ const clientesIniciais: Cliente[] = [
     perfil: 'Autônomo',
     renda: 1800,
     faixa: calcularFaixa(1800),
+    empreendimento: '',
     docs: inicializarDocs('Autônomo').map((d, i) => ({ ...d, entregue: i < 6 })),
   },
   {
@@ -134,6 +137,7 @@ const clientesIniciais: Cliente[] = [
     perfil: 'CLT',
     renda: 5000,
     faixa: calcularFaixa(5000),
+    empreendimento: '',
     docs: inicializarDocs('CLT').map(d => ({ ...d, entregue: true })),
   },
 ];
@@ -151,6 +155,7 @@ export default function HomeScreen() {
   const [novoTelefone, setNovoTelefone] = useState('');
   const [novoPerfil, setNovoPerfil] = useState<Perfil>('CLT');
   const [novaRenda, setNovaRenda] = useState('');
+  const [novoEmpreendimento, setNovoEmpreendimento] = useState('');
 
   const faixaPreview = novaRenda ? calcularFaixa(parseFloat(novaRenda.replace(',', '.'))) : null;
 
@@ -158,12 +163,12 @@ export default function HomeScreen() {
 
   async function carregarClientes() {
     try {
-      const dados = await AsyncStorage.getItem('clientes_v2');
+      const dados = await AsyncStorage.getItem('clientes_v3');
       if (dados) {
         setClientes(JSON.parse(dados));
       } else {
         setClientes(clientesIniciais);
-        await AsyncStorage.setItem('clientes_v2', JSON.stringify(clientesIniciais));
+        await AsyncStorage.setItem('clientes_v3', JSON.stringify(clientesIniciais));
       }
     } catch {
       setClientes(clientesIniciais);
@@ -174,7 +179,7 @@ export default function HomeScreen() {
 
   async function salvarClientes(lista: Cliente[]) {
     try {
-      await AsyncStorage.setItem('clientes_v2', JSON.stringify(lista));
+      await AsyncStorage.setItem('clientes_v3', JSON.stringify(lista));
     } catch (e) {
       console.log('Erro ao salvar:', e);
     }
@@ -197,6 +202,7 @@ export default function HomeScreen() {
       perfil: novoPerfil,
       renda,
       faixa,
+      empreendimento: novoEmpreendimento.trim(),
       docs: inicializarDocs(novoPerfil),
     };
     const novaLista = [...clientes, novo];
@@ -206,6 +212,7 @@ export default function HomeScreen() {
     setNovoTelefone('');
     setNovoPerfil('CLT');
     setNovaRenda('');
+    setNovoEmpreendimento('');
     setModalAberto(false);
   }
 
@@ -268,6 +275,9 @@ export default function HomeScreen() {
                 <Text style={s.cardPerfil}>
                   {c.perfil} · {foraDoMCMV ? 'Fora do MCMV' : `Faixa ${c.faixa}`} · {pendentes} pendentes
                 </Text>
+                {c.empreendimento ? (
+                  <Text style={s.cardEmpreendimento}>🏢 {c.empreendimento}</Text>
+                ) : null}
               </View>
               <Text style={[s.pct, pct === 100 && { color: '#2ecc71' }, foraDoMCMV && { color: '#e74c3c' }]}>
                 {foraDoMCMV ? '—' : `${pct}%`}
@@ -298,6 +308,15 @@ export default function HomeScreen() {
               value={novoTelefone}
               onChangeText={setNovoTelefone}
               keyboardType="phone-pad"
+              placeholderTextColor="#aaa"
+            />
+
+            <Text style={s.label}>Empreendimento</Text>
+            <TextInput
+              style={s.input}
+              placeholder="Ex: Mirante Belvedere"
+              value={novoEmpreendimento}
+              onChangeText={setNovoEmpreendimento}
               placeholderTextColor="#aaa"
             />
 
@@ -366,13 +385,20 @@ function ChecklistScreen({
   const [emailModal, setEmailModal] = useState(false);
   const [emailDestino, setEmailDestino] = useState('');
   const [enviandoEmail, setEnviandoEmail] = useState(false);
+  const [editandoEmpreendimento, setEditandoEmpreendimento] = useState(false);
+  const [empreendimentoTexto, setEmpreendimentoTexto] = useState(cliente.empreendimento || '');
 
   const entregues = docs.filter(d => d.entregue).length;
   const pct = Math.round((entregues / docs.length) * 100);
 
   function salvar(novosDocs: Documento[]) {
     setDocs(novosDocs);
-    onAtualizar({ ...cliente, docs: novosDocs });
+    onAtualizar({ ...cliente, docs: novosDocs, empreendimento: empreendimentoTexto });
+  }
+
+  function salvarEmpreendimento() {
+    setEditandoEmpreendimento(false);
+    onAtualizar({ ...cliente, docs, empreendimento: empreendimentoTexto });
   }
 
   function toggle(i: number) {
@@ -430,8 +456,9 @@ function ChecklistScreen({
     const docsPendentes = docs.filter(d => !d.entregue);
 
     const corpo =
-      `Documentação MCMV — ${cliente.nome}\n\n` +
-      `Perfil: ${cliente.perfil} | Faixa ${cliente.faixa} | Renda R$ ${cliente.renda.toLocaleString('pt-BR')}\n\n` +
+      `Documentação MCMV — ${cliente.nome}\n` +
+      (cliente.empreendimento ? `Empreendimento: ${cliente.empreendimento}\n` : '') +
+      `\nPerfil: ${cliente.perfil} | Faixa ${cliente.faixa} | Renda R$ ${cliente.renda.toLocaleString('pt-BR')}\n\n` +
       `✅ Documentos entregues (${docsEntregues.length}):\n` +
       docsEntregues.map(d => `  • ${d.nome}`).join('\n') +
       (docsPendentes.length > 0
@@ -439,15 +466,9 @@ function ChecklistScreen({
           docsPendentes.map(d => `  • ${d.nome}`).join('\n')
         : '\n\nTodos os documentos foram entregues! ✅');
 
-    // ── CONFIGURE AQUI O EMAILJS ──────────────────────────────────────────────
-    // 1. Crie conta grátis em https://emailjs.com
-    // 2. Crie um serviço (Gmail) e um template
-    // 3. No template use as variáveis: {{to_email}}, {{cliente_nome}}, {{corpo}}
-    // 4. Substitua os valores abaixo:
-    const EMAILJS_SERVICE_ID = 'SEU_SERVICE_ID';
-    const EMAILJS_TEMPLATE_ID = 'SEU_TEMPLATE_ID';
-    const EMAILJS_PUBLIC_KEY = 'SUA_PUBLIC_KEY';
-    // ─────────────────────────────────────────────────────────────────────────
+    const EMAILJS_SERVICE_ID = 'service_5kcdmca';
+    const EMAILJS_TEMPLATE_ID = 'template_loetntf';
+    const EMAILJS_PUBLIC_KEY = 'UTaEmAAnR1rOz-qgQ';
 
     try {
       const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
@@ -460,6 +481,7 @@ function ChecklistScreen({
           template_params: {
             to_email: emailDestino,
             cliente_nome: cliente.nome,
+            empreendimento: cliente.empreendimento || 'Não informado',
             corpo,
           },
         }),
@@ -512,6 +534,29 @@ function ChecklistScreen({
         {cliente.telefone ? (
           <Text style={[s.headerSub, { marginTop: 2 }]}>📱 {cliente.telefone}</Text>
         ) : null}
+
+        {editandoEmpreendimento ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 8 }}>
+            <TextInput
+              style={s.inputEmpreendimento}
+              value={empreendimentoTexto}
+              onChangeText={setEmpreendimentoTexto}
+              placeholder="Nome do empreendimento"
+              placeholderTextColor="rgba(255,255,255,0.5)"
+              autoFocus
+            />
+            <TouchableOpacity onPress={salvarEmpreendimento}>
+              <Text style={{ color: '#2ecc71', fontWeight: '600', fontSize: 13 }}>Salvar</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity onPress={() => setEditandoEmpreendimento(true)} style={{ marginTop: 4 }}>
+            <Text style={[s.headerSub, { color: 'rgba(255,255,255,0.9)' }]}>
+              🏢 {empreendimentoTexto || 'Toque para adicionar empreendimento'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
         <View style={s.barraFundo}>
           <View style={[s.barraFill, { width: `${pct}%` as any }]} />
         </View>
@@ -670,6 +715,7 @@ const s = StyleSheet.create({
   cardInfo: { flex: 1 },
   cardNome: { fontSize: 14, fontWeight: '600', color: '#222' },
   cardPerfil: { fontSize: 12, color: '#888', marginTop: 2 },
+  cardEmpreendimento: { fontSize: 11, color: '#1a5276', marginTop: 2 },
   pct: { fontSize: 13, fontWeight: '600', color: '#1a5276' },
   docCard: { backgroundColor: '#fff', borderRadius: 12, marginBottom: 8, overflow: 'hidden' },
   docItem: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 },
@@ -700,6 +746,7 @@ const s = StyleSheet.create({
   modalTitulo: { fontSize: 18, fontWeight: '600', color: '#222', marginBottom: 20 },
   label: { fontSize: 12, fontWeight: '600', color: '#888', marginBottom: 8, marginTop: 16 },
   input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 12, fontSize: 15, color: '#222' },
+  inputEmpreendimento: { flex: 1, color: '#fff', fontSize: 13, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.5)', paddingVertical: 2 },
   opcoes: { flexDirection: 'row', gap: 8 },
   opcao: { flex: 1, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#ddd', alignItems: 'center' },
   opcaoAtiva: { backgroundColor: '#1a5276', borderColor: '#1a5276' },
