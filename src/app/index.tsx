@@ -3,7 +3,8 @@ import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
   signInWithEmailAndPassword,
-  signOut,
+  sendPasswordResetEmail,
+signOut,
 } from 'firebase/auth';
 import {
   addDoc,
@@ -171,6 +172,21 @@ function LoginScreen() {
   const [modoCadastro, setModoCadastro] = useState(false);
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(false);
+const [senhaEnviada, setSenhaEnviada] = useState(false);
+
+async function recuperarSenha() {
+  if (!email.trim()) {
+    setErro('Digite seu e-mail para recuperar a senha.');
+    return;
+  }
+  try {
+    await sendPasswordResetEmail(auth, email.trim());
+    setSenhaEnviada(true);
+    setErro('');
+  } catch (e: any) {
+    setErro(traduzirErroAuth(e.code || ''));
+  }
+}
 
   async function entrar() {
     if (!email.trim() || !senha.trim()) {
@@ -240,6 +256,22 @@ function LoginScreen() {
           {modoCadastro ? 'Já tenho conta — Entrar' : 'Não tenho conta — Criar conta'}
         </Text>
       </TouchableOpacity>
+          {!modoCadastro && (
+  <TouchableOpacity
+    onPress={recuperarSenha}
+    style={{ marginTop: 10, alignItems: 'center' }}
+  >
+    <Text style={{ color: '#888', fontSize: 12 }}>
+      Esqueceu a senha?
+    </Text>
+  </TouchableOpacity>
+)}
+
+{senhaEnviada && (
+  <Text style={{ color: '#2ecc71', fontSize: 13, textAlign: 'center', marginTop: 10 }}>
+    ✅ E-mail de recuperação enviado! Verifique sua caixa de entrada.
+  </Text>
+)}
     </View>
   );
 }
