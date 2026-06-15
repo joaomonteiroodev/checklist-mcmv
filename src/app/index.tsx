@@ -546,7 +546,11 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir }: {
     salvar(docs.map((d, i) => i === modalObs ? { ...d, observacao: obsTexto } : d));
     setModalObs(null);
   }
-
+  
+  function removerObs(i: number) {
+    salvar(docs.map((d, idx) => idx === i ? { ...d, observacao: '' } : d));
+  }
+  
   function removerAnexo(i: number) {
     salvar(docs.map((d, idx) => idx === i ? { ...d, arquivoBase64: undefined, arquivoNome: undefined } : d));
   }
@@ -718,7 +722,12 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir }: {
               )}
             </View>
             {doc.observacao ? (
-              <View style={s.obsBox}><Text style={s.obsTexto}>💬 {doc.observacao}</Text></View>
+              <View style={s.obsBox}>
+                <Text style={[s.obsTexto, { flex: 1 }]}>💬 {doc.observacao}</Text>
+                <TouchableOpacity onPress={() => removerObs(i)} style={s.btnRemoverObs}>
+                  <Text style={s.btnRemoverObsTexto}>✕</Text>
+                </TouchableOpacity>
+              </View>
             ) : null}
             {doc.arquivoBase64 && Platform.OS === 'web' && (
               <View style={s.imgPreviewBox}>
@@ -829,8 +838,10 @@ const s = StyleSheet.create({
   docAcoes: { flexDirection: 'row', paddingHorizontal: 14, paddingBottom: 10, gap: 8, flexWrap: 'wrap' },
   btnAcao: { backgroundColor: '#f0f0f0', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
   btnAcaoTexto: { fontSize: 11, color: '#555', fontWeight: '500' },
-  obsBox: { backgroundColor: '#fffbea', paddingHorizontal: 14, paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#f0e68c' },
+  obsBox: { backgroundColor: '#fffbea', paddingHorizontal: 14, paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#f0e68c', flexDirection: 'row', alignItems: 'center', gap: 8 },
   obsTexto: { fontSize: 12, color: '#7d6608' },
+  btnRemoverObs: { paddingHorizontal: 6, paddingVertical: 2 },
+  btnRemoverObsTexto: { color: '#d68910', fontSize: 14, fontWeight: '700' },
   imgPreviewBox: { padding: 10, borderTopWidth: 1, borderTopColor: '#eee' },
   circulo: { width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, borderColor: '#ccc', alignItems: 'center', justifyContent: 'center' },
   circuloOk: { backgroundColor: '#2ecc71', borderColor: '#2ecc71' },
