@@ -348,45 +348,35 @@ function ChecklistScreen({ cliente, voltar, onAtualizar }: {
   try {
     for (const doc of docsComArquivo) {
       if (!doc.arquivoBase64) continue;
-
-      const img = new window.Image();
-      await new Promise<void>((resolve) => { img.onload = () => resolve(); img.src = doc.arquivoBase64!; });
-
-      // Dimensões A4 em pixels a 96dpi
-      const A4_W = 794;
-      const A4_H = 1123;
-      const canvas = document.createElement('canvas');
-      canvas.width = A4_W;
-      canvas.height = A4_H;
-      const ctx = canvas.getContext('2d')!;
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, A4_W, A4_H);
-
-      const ratio = Math.min(A4_W / img.width, A4_H / img.height);
-      const w = img.width * ratio;
-      const h = img.height * ratio;
-      const x = (A4_W - w) / 2;
-      const y = (A4_H - h) / 2;
-      ctx.drawImage(img, x, y, w, h);
-
-      // Canvas → PDF via data URL trick
-      const imgData = canvas.toDataURL('image/jpeg', 0.92);
-      
-      // Gera PDF manualmente (formato mínimo válido)
-      const pdfContent = gerarPDFSimples(imgData, A4_W, A4_H);
-      const blob = new Blob([pdfContent], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${cliente.nome.replace(/\s+/g, '_')}_${doc.nome.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-      await new Promise(r => setTimeout(r, 400));
+      const nomeArquivo = `${cliente.nome.replace(/\s+/g, '_')}_${doc.nome.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      const win = window.open('', '_blank');
+      if (!win) continue;
+      win.document.write(`
+        <html>
+          <head>
+            <title>${nomeArquivo}</title>
+            <style>
+              * { margin: 0; padding: 0; box-sizing: border-box; }
+              body { display: flex; justify-content: center; align-items: center; min-height: 100vh; background: white; }
+              img { max-width: 100%; max-height: 100vh; object-fit: contain; }
+              @media print { body { margin: 0; } img { width: 100%; height: auto; } }
+            </style>
+          </head>
+          <body>
+            <img src="${doc.arquivoBase64}" />
+            <script>
+              window.onload = function() {
+                setTimeout(function() { window.print(); }, 500);
+              };
+            </script>
+          </body>
+        </html>
+      `);
+      win.document.close();
+      await new Promise(r => setTimeout(r, 1000));
     }
-    alert('Documentos baixados com sucesso!');
   } catch (err) {
-    console.error(err);
-    alert('Erro ao gerar os PDFs.');
+    alert('Erro ao abrir os documentos.');
   } finally {
     setBaixandoZip(false);
   }
