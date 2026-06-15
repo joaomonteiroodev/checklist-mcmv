@@ -8,8 +8,8 @@ const firebaseConfig = {
   projectId: "checklist-mcmv",
   storageBucket: "checklist-mcmv.firebasestorage.app",
   messagingSenderId: "452869588978",
-  appId: "1:452869588978:web:d9f5609ef3faef98d38d6b",
-  measurementId: "G-8BYS0R3JSG"
+  appId: "1:452869588978:web:bfb2130d0e7e8f08d38d6b",
+  measurementId: "G-S5VWGBGFFP"
 };
 
 export const app = initializeApp(firebaseConfig);
