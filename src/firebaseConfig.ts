@@ -3,13 +3,12 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDRX-PoPwj5nRLw9kOaKfIMhy5mtL9aDTg",
-  authDomain: "checklist-mcmv.firebaseapp.com",
-  projectId: "checklist-mcmv",
-  storageBucket: "checklist-mcmv.firebasestorage.app",
-  messagingSenderId: "452869588978",
-  appId: "1:452869588978:web:bfb2130d0e7e8f08d38d6b",
-  measurementId: "G-S5VWGBGFFP"
+  apiKey: "AIzaSyDZmdl7xKIIO3_oB3_9AkSyqmQ2cdRqkno",
+  authDomain: "checklist-mcmv-prod.firebaseapp.com",
+  projectId: "checklist-mcmv-prod",
+  storageBucket: "checklist-mcmv-prod.firebasestorage.app",
+  messagingSenderId: "350574290293",
+  appId: "1:350574290293:web:1e8c84c08c4684adbb9f3c"
 };
 
 export const app = initializeApp(firebaseConfig);
