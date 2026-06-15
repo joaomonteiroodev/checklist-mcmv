@@ -12,8 +12,6 @@ import {
   View,
 } from 'react-native';
 
-// ─── TIPOS ───────────────────────────────────────────────────────────────────
-
 type Perfil = 'CLT' | 'Autônomo' | 'Func. Público';
 
 interface Documento {
@@ -37,8 +35,6 @@ interface Cliente {
   docs: Documento[];
 }
 
-// ─── HELPERS ─────────────────────────────────────────────────────────────────
-
 function calcularFaixa(renda: number): string {
   if (renda <= 3200) return '1';
   if (renda <= 5000) return '2';
@@ -57,7 +53,6 @@ function getDocsPorPerfil(perfil: Perfil): Omit<Documento, 'entregue' | 'observa
     { id: 6, nome: 'Extrato do FGTS', sub: 'Últimos 24 meses' },
     { id: 7, nome: 'Tela do FGTS', sub: 'Print ou cópia da tela' },
   ];
-
   if (perfil === 'CLT') {
     return [
       ...comuns.slice(0, 3),
@@ -94,11 +89,7 @@ function getDocsPorPerfil(perfil: Perfil): Omit<Documento, 'entregue' | 'observa
 }
 
 function inicializarDocs(perfil: Perfil): Documento[] {
-  return getDocsPorPerfil(perfil).map(d => ({
-    ...d,
-    entregue: false,
-    observacao: '',
-  }));
+  return getDocsPorPerfil(perfil).map(d => ({ ...d, entregue: false, observacao: '' }));
 }
 
 function formatarTelefoneWA(tel: string): string {
@@ -107,42 +98,23 @@ function formatarTelefoneWA(tel: string): string {
   return '55' + digits;
 }
 
-// ─── DADOS INICIAIS ───────────────────────────────────────────────────────────
-
 const clientesIniciais: Cliente[] = [
   {
-    id: 1,
-    nome: 'Maria da Silva',
-    telefone: '',
-    perfil: 'CLT',
-    renda: 3200,
-    faixa: calcularFaixa(3200),
-    empreendimento: 'Mirante Belvedere',
+    id: 1, nome: 'Maria da Silva', telefone: '', perfil: 'CLT',
+    renda: 3200, faixa: calcularFaixa(3200), empreendimento: 'Mirante Belvedere',
     docs: inicializarDocs('CLT').map((d, i) => ({ ...d, entregue: i < 4 })),
   },
   {
-    id: 2,
-    nome: 'José Oliveira',
-    telefone: '',
-    perfil: 'Autônomo',
-    renda: 1800,
-    faixa: calcularFaixa(1800),
-    empreendimento: '',
+    id: 2, nome: 'José Oliveira', telefone: '', perfil: 'Autônomo',
+    renda: 1800, faixa: calcularFaixa(1800), empreendimento: '',
     docs: inicializarDocs('Autônomo').map((d, i) => ({ ...d, entregue: i < 6 })),
   },
   {
-    id: 3,
-    nome: 'Ana Mendes',
-    telefone: '',
-    perfil: 'CLT',
-    renda: 5000,
-    faixa: calcularFaixa(5000),
-    empreendimento: '',
+    id: 3, nome: 'Ana Mendes', telefone: '', perfil: 'CLT',
+    renda: 5000, faixa: calcularFaixa(5000), empreendimento: '',
     docs: inicializarDocs('CLT').map(d => ({ ...d, entregue: true })),
   },
 ];
-
-// ─── TELA PRINCIPAL ───────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
   const [tela, setTela] = useState<'lista' | 'checklist'>('lista');
@@ -150,7 +122,6 @@ export default function HomeScreen() {
   const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(null);
   const [modalAberto, setModalAberto] = useState(false);
   const [carregando, setCarregando] = useState(true);
-
   const [novoNome, setNovoNome] = useState('');
   const [novoTelefone, setNovoTelefone] = useState('');
   const [novoPerfil, setNovoPerfil] = useState<Perfil>('CLT');
@@ -164,25 +135,18 @@ export default function HomeScreen() {
   async function carregarClientes() {
     try {
       const dados = await AsyncStorage.getItem('clientes_v3');
-      if (dados) {
-        setClientes(JSON.parse(dados));
-      } else {
+      if (dados) setClientes(JSON.parse(dados));
+      else {
         setClientes(clientesIniciais);
         await AsyncStorage.setItem('clientes_v3', JSON.stringify(clientesIniciais));
       }
-    } catch {
-      setClientes(clientesIniciais);
-    } finally {
-      setCarregando(false);
-    }
+    } catch { setClientes(clientesIniciais); }
+    finally { setCarregando(false); }
   }
 
   async function salvarClientes(lista: Cliente[]) {
-    try {
-      await AsyncStorage.setItem('clientes_v3', JSON.stringify(lista));
-    } catch (e) {
-      console.log('Erro ao salvar:', e);
-    }
+    try { await AsyncStorage.setItem('clientes_v3', JSON.stringify(lista)); }
+    catch (e) { console.log('Erro ao salvar:', e); }
   }
 
   function abrirCliente(cliente: Cliente) {
@@ -194,25 +158,16 @@ export default function HomeScreen() {
     if (!novoNome.trim() || !novaRenda.trim()) return;
     const renda = parseFloat(novaRenda.replace(',', '.'));
     if (isNaN(renda) || renda <= 0) return;
-    const faixa = calcularFaixa(renda);
     const novo: Cliente = {
-      id: Date.now(),
-      nome: novoNome.trim(),
-      telefone: novoTelefone.trim(),
-      perfil: novoPerfil,
-      renda,
-      faixa,
-      empreendimento: novoEmpreendimento.trim(),
-      docs: inicializarDocs(novoPerfil),
+      id: Date.now(), nome: novoNome.trim(), telefone: novoTelefone.trim(),
+      perfil: novoPerfil, renda, faixa: calcularFaixa(renda),
+      empreendimento: novoEmpreendimento.trim(), docs: inicializarDocs(novoPerfil),
     };
     const novaLista = [...clientes, novo];
     setClientes(novaLista);
     salvarClientes(novaLista);
-    setNovoNome('');
-    setNovoTelefone('');
-    setNovoPerfil('CLT');
-    setNovaRenda('');
-    setNovoEmpreendimento('');
+    setNovoNome(''); setNovoTelefone(''); setNovoPerfil('CLT');
+    setNovaRenda(''); setNovoEmpreendimento('');
     setModalAberto(false);
   }
 
@@ -223,23 +178,15 @@ export default function HomeScreen() {
     setClienteSelecionado(clienteAtualizado);
   }
 
-  if (carregando) {
-    return (
-      <View style={[s.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <Text style={{ color: '#888', fontSize: 15 }}>Carregando...</Text>
-      </View>
-    );
-  }
+  if (carregando) return (
+    <View style={[s.container, { justifyContent: 'center', alignItems: 'center' }]}>
+      <Text style={{ color: '#888', fontSize: 15 }}>Carregando...</Text>
+    </View>
+  );
 
-  if (tela === 'checklist' && clienteSelecionado) {
-    return (
-      <ChecklistScreen
-        cliente={clienteSelecionado}
-        voltar={() => setTela('lista')}
-        onAtualizar={atualizarCliente}
-      />
-    );
-  }
+  if (tela === 'checklist' && clienteSelecionado) return (
+    <ChecklistScreen cliente={clienteSelecionado} voltar={() => setTela('lista')} onAtualizar={atualizarCliente} />
+  );
 
   return (
     <View style={s.container}>
@@ -266,18 +213,12 @@ export default function HomeScreen() {
           return (
             <TouchableOpacity key={c.id} style={s.card} onPress={() => abrirCliente(c)}>
               <View style={s.avatar}>
-                <Text style={s.avatarTexto}>
-                  {c.nome.split(' ').map(n => n[0]).slice(0, 2).join('')}
-                </Text>
+                <Text style={s.avatarTexto}>{c.nome.split(' ').map(n => n[0]).slice(0, 2).join('')}</Text>
               </View>
               <View style={s.cardInfo}>
                 <Text style={s.cardNome}>{c.nome}</Text>
-                <Text style={s.cardPerfil}>
-                  {c.perfil} · {foraDoMCMV ? 'Fora do MCMV' : `Faixa ${c.faixa}`} · {pendentes} pendentes
-                </Text>
-                {c.empreendimento ? (
-                  <Text style={s.cardEmpreendimento}>🏢 {c.empreendimento}</Text>
-                ) : null}
+                <Text style={s.cardPerfil}>{c.perfil} · {foraDoMCMV ? 'Fora do MCMV' : `Faixa ${c.faixa}`} · {pendentes} pendentes</Text>
+                {c.empreendimento ? <Text style={s.cardEmpreendimento}>🏢 {c.empreendimento}</Text> : null}
               </View>
               <Text style={[s.pct, pct === 100 && { color: '#2ecc71' }, foraDoMCMV && { color: '#e74c3c' }]}>
                 {foraDoMCMV ? '—' : `${pct}%`}
@@ -291,68 +232,29 @@ export default function HomeScreen() {
         <View style={s.modalFundo}>
           <View style={s.modalBox}>
             <Text style={s.modalTitulo}>Novo Cliente</Text>
-
             <Text style={s.label}>Nome completo</Text>
-            <TextInput
-              style={s.input}
-              placeholder="Ex: João da Silva"
-              value={novoNome}
-              onChangeText={setNovoNome}
-              placeholderTextColor="#aaa"
-            />
-
+            <TextInput style={s.input} placeholder="Ex: João da Silva" value={novoNome} onChangeText={setNovoNome} placeholderTextColor="#aaa" />
             <Text style={s.label}>Telefone (WhatsApp)</Text>
-            <TextInput
-              style={s.input}
-              placeholder="Ex: 81999990000"
-              value={novoTelefone}
-              onChangeText={setNovoTelefone}
-              keyboardType="phone-pad"
-              placeholderTextColor="#aaa"
-            />
-
+            <TextInput style={s.input} placeholder="Ex: 81999990000" value={novoTelefone} onChangeText={setNovoTelefone} keyboardType="phone-pad" placeholderTextColor="#aaa" />
             <Text style={s.label}>Empreendimento</Text>
-            <TextInput
-              style={s.input}
-              placeholder="Ex: Mirante Belvedere"
-              value={novoEmpreendimento}
-              onChangeText={setNovoEmpreendimento}
-              placeholderTextColor="#aaa"
-            />
-
+            <TextInput style={s.input} placeholder="Ex: Mirante Belvedere" value={novoEmpreendimento} onChangeText={setNovoEmpreendimento} placeholderTextColor="#aaa" />
             <Text style={s.label}>Perfil profissional</Text>
             <View style={s.opcoes}>
               {(['CLT', 'Autônomo', 'Func. Público'] as Perfil[]).map(p => (
-                <TouchableOpacity
-                  key={p}
-                  style={[s.opcao, novoPerfil === p && s.opcaoAtiva]}
-                  onPress={() => setNovoPerfil(p)}
-                >
+                <TouchableOpacity key={p} style={[s.opcao, novoPerfil === p && s.opcaoAtiva]} onPress={() => setNovoPerfil(p)}>
                   <Text style={[s.opcaoTexto, novoPerfil === p && s.opcaoTextoAtivo]}>{p}</Text>
                 </TouchableOpacity>
               ))}
             </View>
-
             <Text style={s.label}>Renda familiar (R$)</Text>
-            <TextInput
-              style={s.input}
-              placeholder="Ex: 3200"
-              value={novaRenda}
-              onChangeText={setNovaRenda}
-              keyboardType="numeric"
-              placeholderTextColor="#aaa"
-            />
-
+            <TextInput style={s.input} placeholder="Ex: 3200" value={novaRenda} onChangeText={setNovaRenda} keyboardType="numeric" placeholderTextColor="#aaa" />
             {faixaPreview && (
               <View style={[s.faixaBox, faixaPreview === 'Fora do MCMV' ? s.faixaBoxErro : s.faixaBoxOk]}>
                 <Text style={[s.faixaTexto, faixaPreview === 'Fora do MCMV' ? s.faixaTextoErro : s.faixaTextoOk]}>
-                  {faixaPreview === 'Fora do MCMV'
-                    ? 'Renda acima do limite do MCMV (R$ 13.000)'
-                    : `Faixa ${faixaPreview} — cliente elegível ao MCMV`}
+                  {faixaPreview === 'Fora do MCMV' ? 'Renda acima do limite do MCMV (R$ 13.000)' : `Faixa ${faixaPreview} — cliente elegível ao MCMV`}
                 </Text>
               </View>
             )}
-
             <View style={s.modalBotoes}>
               <TouchableOpacity style={s.btnCancelar} onPress={() => setModalAberto(false)}>
                 <Text style={s.btnCancelarTexto}>Cancelar</Text>
@@ -368,16 +270,8 @@ export default function HomeScreen() {
   );
 }
 
-// ─── TELA CHECKLIST ───────────────────────────────────────────────────────────
-
-function ChecklistScreen({
-  cliente,
-  voltar,
-  onAtualizar,
-}: {
-  cliente: Cliente;
-  voltar: () => void;
-  onAtualizar: (c: Cliente) => void;
+function ChecklistScreen({ cliente, voltar, onAtualizar }: {
+  cliente: Cliente; voltar: () => void; onAtualizar: (c: Cliente) => void;
 }) {
   const [docs, setDocs] = useState<Documento[]>(cliente.docs);
   const [modalObs, setModalObs] = useState<number | null>(null);
@@ -387,6 +281,7 @@ function ChecklistScreen({
   const [enviandoEmail, setEnviandoEmail] = useState(false);
   const [editandoEmpreendimento, setEditandoEmpreendimento] = useState(false);
   const [empreendimentoTexto, setEmpreendimentoTexto] = useState(cliente.empreendimento || '');
+  const [baixandoZip, setBaixandoZip] = useState(false);
 
   const entregues = docs.filter(d => d.entregue).length;
   const pct = Math.round((entregues / docs.length) * 100);
@@ -402,8 +297,7 @@ function ChecklistScreen({
   }
 
   function toggle(i: number) {
-    const novo = docs.map((d, idx) => idx === i ? { ...d, entregue: !d.entregue } : d);
-    salvar(novo);
+    salvar(docs.map((d, idx) => idx === i ? { ...d, entregue: !d.entregue } : d));
   }
 
   function abrirObs(i: number) {
@@ -413,31 +307,26 @@ function ChecklistScreen({
 
   function salvarObs() {
     if (modalObs === null) return;
-    const novo = docs.map((d, i) => i === modalObs ? { ...d, observacao: obsTexto } : d);
-    salvar(novo);
+    salvar(docs.map((d, i) => i === modalObs ? { ...d, observacao: obsTexto } : d));
     setModalObs(null);
   }
 
   function abrirUpload(i: number) {
-    if (Platform.OS === 'web') {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'image/png,image/jpeg,image/jpg';
-      input.onchange = async (e: any) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-          const base64 = reader.result as string;
-          const novo = docs.map((d, idx) =>
-            idx === i ? { ...d, arquivoBase64: base64, arquivoNome: file.name } : d
-          );
-          salvar(novo);
-        };
-        reader.readAsDataURL(file);
+    if (Platform.OS !== 'web') return;
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/png,image/jpeg,image/jpg';
+    input.onchange = async (e: any) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = reader.result as string;
+        salvar(docs.map((d, idx) => idx === i ? { ...d, arquivoBase64: base64, arquivoNome: file.name } : d));
       };
-      input.click();
-    }
+      reader.readAsDataURL(file);
+    };
+    input.click();
   }
 
   function baixarImagem(doc: Documento) {
@@ -448,13 +337,44 @@ function ChecklistScreen({
     a.click();
   }
 
+  async function baixarTodosComoZip() {
+  if (Platform.OS !== 'web') return;
+  const docsComArquivo = docs.filter(d => d.arquivoBase64);
+  if (docsComArquivo.length === 0) {
+    alert('Nenhum documento foi anexado ainda.');
+    return;
+  }
+  setBaixandoZip(true);
+  try {
+    const JSZip = (await import('jszip')).default;
+    const { saveAs } = await import('file-saver');
+    const zip = new JSZip();
+
+    for (const doc of docsComArquivo) {
+      if (!doc.arquivoBase64) continue;
+      const base64Data = doc.arquivoBase64.split(',')[1];
+      const mimeType = doc.arquivoBase64.includes('image/png') ? 'image/png' : 'image/jpeg';
+      const ext = mimeType === 'image/png' ? 'png' : 'jpg';
+      const nomeArquivo = `${doc.nome.replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`;
+      zip.file(nomeArquivo, base64Data, { base64: true });
+    }
+
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const nomeCliente = cliente.nome.replace(/\s+/g, '_');
+    saveAs(blob, `Documentos_${nomeCliente}.zip`);
+  } catch (err) {
+    console.error(err);
+    alert('Erro ao gerar o ZIP. Tente novamente.');
+  } finally {
+    setBaixandoZip(false);
+  }
+}
+
   async function enviarEmail() {
     if (!emailDestino.trim()) return;
     setEnviandoEmail(true);
-
     const docsEntregues = docs.filter(d => d.entregue);
     const docsPendentes = docs.filter(d => !d.entregue);
-
     const corpo =
       `Documentação MCMV — ${cliente.nome}\n` +
       (cliente.empreendimento ? `Empreendimento: ${cliente.empreendimento}\n` : '') +
@@ -462,22 +382,17 @@ function ChecklistScreen({
       `✅ Documentos entregues (${docsEntregues.length}):\n` +
       docsEntregues.map(d => `  • ${d.nome}`).join('\n') +
       (docsPendentes.length > 0
-        ? `\n\n⏳ Documentos pendentes (${docsPendentes.length}):\n` +
-          docsPendentes.map(d => `  • ${d.nome}`).join('\n')
+        ? `\n\n⏳ Documentos pendentes (${docsPendentes.length}):\n` + docsPendentes.map(d => `  • ${d.nome}`).join('\n')
         : '\n\nTodos os documentos foram entregues! ✅');
-
-    const EMAILJS_SERVICE_ID = 'service_5kcdmca';
-    const EMAILJS_TEMPLATE_ID = 'template_loetntf';
-    const EMAILJS_PUBLIC_KEY = 'UTaEmAAnR1rOz-qgQ';
 
     try {
       const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          service_id: EMAILJS_SERVICE_ID,
-          template_id: EMAILJS_TEMPLATE_ID,
-          user_id: EMAILJS_PUBLIC_KEY,
+          service_id: 'service_5kcdmca',
+          template_id: 'template_loetntf',
+          user_id: 'UTaEmAAnR1rOz-qgQ',
           template_params: {
             to_email: emailDestino,
             cliente_nome: cliente.nome,
@@ -486,80 +401,46 @@ function ChecklistScreen({
           },
         }),
       });
-      if (res.ok) {
-        alert('E-mail enviado com sucesso!');
-        setEmailModal(false);
-        setEmailDestino('');
-      } else {
-        alert('Erro ao enviar. Verifique as configurações do EmailJS.');
-      }
-    } catch {
-      alert('Erro de conexão ao tentar enviar o e-mail.');
-    } finally {
-      setEnviandoEmail(false);
-    }
+      if (res.ok) { alert('E-mail enviado com sucesso!'); setEmailModal(false); setEmailDestino(''); }
+      else alert('Erro ao enviar. Verifique as configurações do EmailJS.');
+    } catch { alert('Erro de conexão ao tentar enviar o e-mail.'); }
+    finally { setEnviandoEmail(false); }
   }
 
   function enviarWhatsApp() {
     const pendentes = docs.filter(d => !d.entregue).map(d => `- ${d.nome}`);
     const numero = cliente.telefone ? formatarTelefoneWA(cliente.telefone) : '';
     const base = numero ? `https://wa.me/${numero}` : 'https://wa.me/';
-
     if (pendentes.length === 0) {
-      Linking.openURL(`${base}?text=${encodeURIComponent(
-        `Olá ${cliente.nome}! Todos os seus documentos já foram entregues. Em breve entraremos em contato com os próximos passos do seu financiamento pelo MCMV.`
-      )}`);
+      Linking.openURL(`${base}?text=${encodeURIComponent(`Olá ${cliente.nome}! Todos os seus documentos já foram entregues. Em breve entraremos em contato com os próximos passos do seu financiamento pelo MCMV.`)}`);
       return;
     }
-
     const mensagem =
       `Olá ${cliente.nome}, tudo bem?\n\n` +
       `Estou verificando a documentação do seu financiamento pelo Minha Casa, Minha Vida e ainda precisamos dos seguintes documentos:\n\n` +
       `${pendentes.join('\n')}\n\n` +
       `Assim que tiver, pode me enviar por aqui mesmo ou trazer pessoalmente. Qualquer dúvida estou à disposição.`;
-
     Linking.openURL(`${base}?text=${encodeURIComponent(mensagem)}`);
   }
 
   return (
     <View style={s.container}>
       <View style={s.header}>
-        <TouchableOpacity onPress={voltar}>
-          <Text style={s.voltar}>← Voltar</Text>
-        </TouchableOpacity>
+        <TouchableOpacity onPress={voltar}><Text style={s.voltar}>← Voltar</Text></TouchableOpacity>
         <Text style={s.headerTitulo}>{cliente.nome}</Text>
-        <Text style={s.headerSub}>
-          {cliente.perfil} · Faixa {cliente.faixa} · Renda R$ {cliente.renda.toLocaleString('pt-BR')}
-        </Text>
-        {cliente.telefone ? (
-          <Text style={[s.headerSub, { marginTop: 2 }]}>📱 {cliente.telefone}</Text>
-        ) : null}
-
+        <Text style={s.headerSub}>{cliente.perfil} · Faixa {cliente.faixa} · Renda R$ {cliente.renda.toLocaleString('pt-BR')}</Text>
+        {cliente.telefone ? <Text style={[s.headerSub, { marginTop: 2 }]}>📱 {cliente.telefone}</Text> : null}
         {editandoEmpreendimento ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 8 }}>
-            <TextInput
-              style={s.inputEmpreendimento}
-              value={empreendimentoTexto}
-              onChangeText={setEmpreendimentoTexto}
-              placeholder="Nome do empreendimento"
-              placeholderTextColor="rgba(255,255,255,0.5)"
-              autoFocus
-            />
-            <TouchableOpacity onPress={salvarEmpreendimento}>
-              <Text style={{ color: '#2ecc71', fontWeight: '600', fontSize: 13 }}>Salvar</Text>
-            </TouchableOpacity>
+            <TextInput style={s.inputEmpreendimento} value={empreendimentoTexto} onChangeText={setEmpreendimentoTexto} placeholder="Nome do empreendimento" placeholderTextColor="rgba(255,255,255,0.5)" autoFocus />
+            <TouchableOpacity onPress={salvarEmpreendimento}><Text style={{ color: '#2ecc71', fontWeight: '600', fontSize: 13 }}>Salvar</Text></TouchableOpacity>
           </View>
         ) : (
           <TouchableOpacity onPress={() => setEditandoEmpreendimento(true)} style={{ marginTop: 4 }}>
-            <Text style={[s.headerSub, { color: 'rgba(255,255,255,0.9)' }]}>
-              🏢 {empreendimentoTexto || 'Toque para adicionar empreendimento'}
-            </Text>
+            <Text style={[s.headerSub, { color: 'rgba(255,255,255,0.9)' }]}>🏢 {empreendimentoTexto || 'Toque para adicionar empreendimento'}</Text>
           </TouchableOpacity>
         )}
-
-        <View style={s.barraFundo}>
-          <View style={[s.barraFill, { width: `${pct}%` as any }]} />
-        </View>
+        <View style={s.barraFundo}><View style={[s.barraFill, { width: `${pct}%` as any }]} /></View>
         <View style={s.barraLabels}>
           <Text style={s.barraTexto}>{entregues} de {docs.length} entregues</Text>
           <Text style={s.barraTexto}>{pct}%</Text>
@@ -568,7 +449,6 @@ function ChecklistScreen({
 
       <ScrollView style={s.scroll}>
         <Text style={s.secao}>Documentos</Text>
-
         {docs.map((doc, i) => (
           <View key={doc.id} style={s.docCard}>
             <TouchableOpacity style={s.docItem} onPress={() => toggle(i)}>
@@ -585,7 +465,6 @@ function ChecklistScreen({
                 </Text>
               </View>
             </TouchableOpacity>
-
             <View style={s.docAcoes}>
               <TouchableOpacity style={s.btnAcao} onPress={() => abrirObs(i)}>
                 <Text style={s.btnAcaoTexto}>{doc.observacao ? '📝 Ver obs.' : '📝 Anotar'}</Text>
@@ -599,29 +478,23 @@ function ChecklistScreen({
                 </TouchableOpacity>
               )}
             </View>
-
             {doc.observacao ? (
-              <View style={s.obsBox}>
-                <Text style={s.obsTexto}>💬 {doc.observacao}</Text>
-              </View>
+              <View style={s.obsBox}><Text style={s.obsTexto}>💬 {doc.observacao}</Text></View>
             ) : null}
-
             {doc.arquivoBase64 && Platform.OS === 'web' && (
               <View style={s.imgPreviewBox}>
-                <img
-                  src={doc.arquivoBase64}
-                  alt={doc.nome}
-                  style={{ width: '100%', maxHeight: 120, objectFit: 'contain', borderRadius: 8 }}
-                />
+                <img src={doc.arquivoBase64} alt={doc.nome} style={{ width: '100%', maxHeight: 120, objectFit: 'contain', borderRadius: 8 }} />
               </View>
             )}
           </View>
         ))}
 
+        <TouchableOpacity style={s.btnZip} onPress={baixarTodosComoZip} disabled={baixandoZip}>
+          <Text style={s.btnZipTexto}>{baixandoZip ? '⏳ Gerando ZIP...' : '📦 Baixar todos os documentos em PDF'}</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity style={s.btnWhatsApp} onPress={enviarWhatsApp}>
-          <Text style={s.btnWhatsAppTexto}>
-            {entregues === docs.length ? '🎉 Enviar parabéns ao cliente' : '💬 Enviar pendências pelo WhatsApp'}
-          </Text>
+          <Text style={s.btnWhatsAppTexto}>{entregues === docs.length ? '🎉 Enviar parabéns ao cliente' : '💬 Enviar pendências pelo WhatsApp'}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={s.btnEmail} onPress={() => setEmailModal(true)}>
@@ -629,59 +502,30 @@ function ChecklistScreen({
         </TouchableOpacity>
       </ScrollView>
 
-      {/* Modal Observação */}
       <Modal visible={modalObs !== null} animationType="slide" transparent>
         <View style={s.modalFundo}>
           <View style={s.modalBox}>
             <Text style={s.modalTitulo}>{modalObs !== null ? docs[modalObs]?.nome : ''}</Text>
             <Text style={s.label}>Observação</Text>
-            <TextInput
-              style={[s.input, { height: 100, textAlignVertical: 'top' }]}
-              placeholder="Ex: Cliente vai trazer na sexta-feira..."
-              value={obsTexto}
-              onChangeText={setObsTexto}
-              multiline
-              placeholderTextColor="#aaa"
-            />
+            <TextInput style={[s.input, { height: 100, textAlignVertical: 'top' }]} placeholder="Ex: Cliente vai trazer na sexta-feira..." value={obsTexto} onChangeText={setObsTexto} multiline placeholderTextColor="#aaa" />
             <View style={s.modalBotoes}>
-              <TouchableOpacity style={s.btnCancelar} onPress={() => setModalObs(null)}>
-                <Text style={s.btnCancelarTexto}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={s.btnSalvar} onPress={salvarObs}>
-                <Text style={s.btnSalvarTexto}>Salvar</Text>
-              </TouchableOpacity>
+              <TouchableOpacity style={s.btnCancelar} onPress={() => setModalObs(null)}><Text style={s.btnCancelarTexto}>Cancelar</Text></TouchableOpacity>
+              <TouchableOpacity style={s.btnSalvar} onPress={salvarObs}><Text style={s.btnSalvarTexto}>Salvar</Text></TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* Modal E-mail */}
       <Modal visible={emailModal} animationType="slide" transparent>
         <View style={s.modalFundo}>
           <View style={s.modalBox}>
             <Text style={s.modalTitulo}>Enviar por e-mail</Text>
             <Text style={s.label}>E-mail do destinatário</Text>
-            <TextInput
-              style={s.input}
-              placeholder="Ex: cliente@email.com"
-              value={emailDestino}
-              onChangeText={setEmailDestino}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              placeholderTextColor="#aaa"
-            />
-            <Text style={{ fontSize: 12, color: '#888', marginTop: 8 }}>
-              Será enviado um resumo com os documentos entregues e pendentes.
-            </Text>
+            <TextInput style={s.input} placeholder="Ex: cliente@email.com" value={emailDestino} onChangeText={setEmailDestino} keyboardType="email-address" autoCapitalize="none" placeholderTextColor="#aaa" />
+            <Text style={{ fontSize: 12, color: '#888', marginTop: 8 }}>Será enviado um resumo com os documentos entregues e pendentes.</Text>
             <View style={s.modalBotoes}>
-              <TouchableOpacity style={s.btnCancelar} onPress={() => setEmailModal(false)}>
-                <Text style={s.btnCancelarTexto}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[s.btnSalvar, enviandoEmail && { opacity: 0.6 }]}
-                onPress={enviarEmail}
-                disabled={enviandoEmail}
-              >
+              <TouchableOpacity style={s.btnCancelar} onPress={() => setEmailModal(false)}><Text style={s.btnCancelarTexto}>Cancelar</Text></TouchableOpacity>
+              <TouchableOpacity style={[s.btnSalvar, enviandoEmail && { opacity: 0.6 }]} onPress={enviarEmail} disabled={enviandoEmail}>
                 <Text style={s.btnSalvarTexto}>{enviandoEmail ? 'Enviando...' : 'Enviar'}</Text>
               </TouchableOpacity>
             </View>
@@ -691,8 +535,6 @@ function ChecklistScreen({
     </View>
   );
 }
-
-// ─── ESTILOS ──────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
@@ -737,7 +579,9 @@ const s = StyleSheet.create({
   badgeTexto: { fontSize: 11, fontWeight: '500' },
   badgeTextoOk: { color: '#1e8449' },
   badgeTextoPend: { color: '#d68910' },
-  btnWhatsApp: { backgroundColor: '#25D366', borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 8 },
+  btnZip: { backgroundColor: '#8e44ad', borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 8 },
+  btnZipTexto: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  btnWhatsApp: { backgroundColor: '#25D366', borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 10 },
   btnWhatsAppTexto: { color: '#fff', fontSize: 15, fontWeight: '600' },
   btnEmail: { backgroundColor: '#2980b9', borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 10, marginBottom: 32 },
   btnEmailTexto: { color: '#fff', fontSize: 15, fontWeight: '600' },
