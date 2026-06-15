@@ -346,25 +346,17 @@ function ChecklistScreen({ cliente, voltar, onAtualizar }: {
   }
   setBaixandoZip(true);
   try {
-    const JSZip = (await import('jszip')).default;
-    const { saveAs } = await import('file-saver');
-    const zip = new JSZip();
-
     for (const doc of docsComArquivo) {
       if (!doc.arquivoBase64) continue;
-      const base64Data = doc.arquivoBase64.split(',')[1];
-      const mimeType = doc.arquivoBase64.includes('image/png') ? 'image/png' : 'image/jpeg';
-      const ext = mimeType === 'image/png' ? 'png' : 'jpg';
-      const nomeArquivo = `${doc.nome.replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`;
-      zip.file(nomeArquivo, base64Data, { base64: true });
+      const a = document.createElement('a');
+      a.href = doc.arquivoBase64;
+      const ext = doc.arquivoBase64.includes('image/png') ? 'png' : 'jpg';
+      a.download = `${cliente.nome.replace(/\s+/g, '_')}_${doc.nome.replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`;
+      a.click();
+      await new Promise(r => setTimeout(r, 300));
     }
-
-    const blob = await zip.generateAsync({ type: 'blob' });
-    const nomeCliente = cliente.nome.replace(/\s+/g, '_');
-    saveAs(blob, `Documentos_${nomeCliente}.zip`);
   } catch (err) {
-    console.error(err);
-    alert('Erro ao gerar o ZIP. Tente novamente.');
+    alert('Erro ao baixar os arquivos.');
   } finally {
     setBaixandoZip(false);
   }
