@@ -1,4 +1,20 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  User,
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+} from 'firebase/auth';
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  query,
+  updateDoc,
+  where,
+} from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
   Linking,
@@ -11,6 +27,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { auth, db } from '../firebaseConfig';
+
+// ─── TIPOS ───────────────────────────────────────────────────────────────────
 
 type Perfil = 'CLT' | 'Autônomo' | 'Func. Público';
 
@@ -25,7 +44,7 @@ interface Documento {
 }
 
 interface Cliente {
-  id: number;
+  id: string;
   nome: string;
   telefone: string;
   perfil: Perfil;
@@ -33,7 +52,10 @@ interface Cliente {
   faixa: string;
   empreendimento: string;
   docs: Documento[];
+  corretorId: string;
 }
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 function calcularFaixa(renda: number): string {
   if (renda <= 3200) return '1';
@@ -53,6 +75,7 @@ function getDocsPorPerfil(perfil: Perfil): Omit<Documento, 'entregue' | 'observa
     { id: 6, nome: 'Extrato do FGTS', sub: 'Últimos 24 meses' },
     { id: 7, nome: 'Tela do FGTS', sub: 'Print ou cópia da tela' },
   ];
+
   if (perfil === 'CLT') {
     return [
       ...comuns.slice(0, 3),
@@ -98,30 +121,138 @@ function formatarTelefoneWA(tel: string): string {
   return '55' + digits;
 }
 
-const clientesIniciais: Cliente[] = [
-  {
-    id: 1, nome: 'Maria da Silva', telefone: '', perfil: 'CLT',
-    renda: 3200, faixa: calcularFaixa(3200), empreendimento: 'Mirante Belvedere',
-    docs: inicializarDocs('CLT').map((d, i) => ({ ...d, entregue: i < 4 })),
-  },
-  {
-    id: 2, nome: 'José Oliveira', telefone: '', perfil: 'Autônomo',
-    renda: 1800, faixa: calcularFaixa(1800), empreendimento: '',
-    docs: inicializarDocs('Autônomo').map((d, i) => ({ ...d, entregue: i < 6 })),
-  },
-  {
-    id: 3, nome: 'Ana Mendes', telefone: '', perfil: 'CLT',
-    renda: 5000, faixa: calcularFaixa(5000), empreendimento: '',
-    docs: inicializarDocs('CLT').map(d => ({ ...d, entregue: true })),
-  },
-];
+function traduzirErroAuth(code: string): string {
+  switch (code) {
+    case 'auth/invalid-email': return 'E-mail inválido.';
+    case 'auth/user-not-found': return 'Usuário não encontrado.';
+    case 'auth/wrong-password': return 'Senha incorreta.';
+    case 'auth/invalid-credential': return 'E-mail ou senha incorretos.';
+    case 'auth/email-already-in-use': return 'Este e-mail já está cadastrado.';
+    case 'auth/weak-password': return 'A senha deve ter pelo menos 6 caracteres.';
+    case 'auth/missing-password': return 'Digite uma senha.';
+    default: return 'Erro ao autenticar: ' + code;
+  }
+}
+
+// ─── RAIZ: CONTROLE DE LOGIN ────────────────────────────────────────────────
 
 export default function HomeScreen() {
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setAuthLoading(false);
+    });
+    return unsubscribe;
+  }, []);
+
+  if (authLoading) {
+    return (
+      <View style={[s.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={{ color: '#888', fontSize: 15 }}>Carregando...</Text>
+      </View>
+    );
+  }
+
+  if (!user) {
+    return <LoginScreen />;
+  }
+
+  return <AppPrincipal user={user} />;
+}
+
+// ─── TELA DE LOGIN ───────────────────────────────────────────────────────────
+
+function LoginScreen() {
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
+  const [modoCadastro, setModoCadastro] = useState(false);
+  const [erro, setErro] = useState('');
+  const [carregando, setCarregando] = useState(false);
+
+  async function entrar() {
+    if (!email.trim() || !senha.trim()) {
+      setErro('Preencha e-mail e senha.');
+      return;
+    }
+    setErro('');
+    setCarregando(true);
+    try {
+      if (modoCadastro) {
+        await createUserWithEmailAndPassword(auth, email.trim(), senha);
+      } else {
+        await signInWithEmailAndPassword(auth, email.trim(), senha);
+      }
+    } catch (e: any) {
+      setErro(traduzirErroAuth(e.code || ''));
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  return (
+    <View style={[s.container, { justifyContent: 'center', padding: 24 }]}>
+      <Text style={s.loginTitulo}>📋 Checklist MCMV</Text>
+      <Text style={s.loginSub}>
+        {modoCadastro ? 'Criar conta de corretor' : 'Entre com sua conta'}
+      </Text>
+
+      <Text style={s.label}>E-mail</Text>
+      <TextInput
+        style={s.input}
+        placeholder="seuemail@exemplo.com"
+        value={email}
+        onChangeText={setEmail}
+        autoCapitalize="none"
+        keyboardType="email-address"
+        placeholderTextColor="#aaa"
+      />
+
+      <Text style={s.label}>Senha</Text>
+      <TextInput
+        style={s.input}
+        placeholder="Mínimo 6 caracteres"
+        value={senha}
+        onChangeText={setSenha}
+        secureTextEntry
+        placeholderTextColor="#aaa"
+      />
+
+      {erro ? <Text style={s.loginErro}>{erro}</Text> : null}
+
+      <TouchableOpacity
+        style={[s.btnSalvar, { marginTop: 20 }, carregando && { opacity: 0.6 }]}
+        onPress={entrar}
+        disabled={carregando}
+      >
+        <Text style={s.btnSalvarTexto}>
+          {carregando ? 'Aguarde...' : modoCadastro ? 'Criar conta' : 'Entrar'}
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        onPress={() => { setModoCadastro(!modoCadastro); setErro(''); }}
+        style={{ marginTop: 16, alignItems: 'center' }}
+      >
+        <Text style={s.loginLink}>
+          {modoCadastro ? 'Já tenho conta — Entrar' : 'Não tenho conta — Criar conta'}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// ─── APP PRINCIPAL (usuário logado) ─────────────────────────────────────────
+
+function AppPrincipal({ user }: { user: User }) {
   const [tela, setTela] = useState<'lista' | 'checklist'>('lista');
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(null);
   const [modalAberto, setModalAberto] = useState(false);
   const [carregando, setCarregando] = useState(true);
+
   const [novoNome, setNovoNome] = useState('');
   const [novoTelefone, setNovoTelefone] = useState('');
   const [novoPerfil, setNovoPerfil] = useState<Perfil>('CLT');
@@ -131,78 +262,108 @@ export default function HomeScreen() {
 
   const faixaPreview = novaRenda ? calcularFaixa(parseFloat(novaRenda.replace(',', '.'))) : null;
 
-  useEffect(() => { carregarClientes(); }, []);
-
-  async function carregarClientes() {
-    try {
-      const dados = await AsyncStorage.getItem('clientes_v3');
-      if (dados) setClientes(JSON.parse(dados));
-      else {
-        setClientes(clientesIniciais);
-        await AsyncStorage.setItem('clientes_v3', JSON.stringify(clientesIniciais));
+  useEffect(() => {
+    const q = query(collection(db, 'clientes'), where('corretorId', '==', user.uid));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const lista: Cliente[] = snapshot.docs.map(d => ({
+          id: d.id,
+          ...(d.data() as Omit<Cliente, 'id'>),
+        }));
+        setClientes(lista);
+        setCarregando(false);
+      },
+      (erro) => {
+        console.log('Erro ao carregar clientes:', erro);
+        setCarregando(false);
       }
-    } catch { setClientes(clientesIniciais); }
-    finally { setCarregando(false); }
-  }
-
-  async function salvarClientes(lista: Cliente[]) {
-    try { await AsyncStorage.setItem('clientes_v3', JSON.stringify(lista)); }
-    catch (e) { console.log('Erro ao salvar:', e); }
-  }
+    );
+    return unsubscribe;
+  }, [user.uid]);
 
   function abrirCliente(cliente: Cliente) {
     setClienteSelecionado(cliente);
     setTela('checklist');
   }
 
-  function adicionarCliente() {
+  async function adicionarCliente() {
     if (!novoNome.trim() || !novaRenda.trim()) return;
     const renda = parseFloat(novaRenda.replace(',', '.'));
     if (isNaN(renda) || renda <= 0) return;
-    const novo: Cliente = {
-      id: Date.now(), nome: novoNome.trim(), telefone: novoTelefone.trim(),
-      perfil: novoPerfil, renda, faixa: calcularFaixa(renda),
-      empreendimento: novoEmpreendimento.trim(), docs: inicializarDocs(novoPerfil),
+
+    const novo = {
+      nome: novoNome.trim(),
+      telefone: novoTelefone.trim(),
+      perfil: novoPerfil,
+      renda,
+      faixa: calcularFaixa(renda),
+      empreendimento: novoEmpreendimento.trim(),
+      docs: inicializarDocs(novoPerfil),
+      corretorId: user.uid,
     };
-    const novaLista = [...clientes, novo];
-    setClientes(novaLista);
-    salvarClientes(novaLista);
-    setNovoNome(''); setNovoTelefone(''); setNovoPerfil('CLT');
-    setNovaRenda(''); setNovoEmpreendimento('');
+
+    try {
+      await addDoc(collection(db, 'clientes'), novo);
+    } catch (e) {
+      console.log(e);
+      alert('Erro ao salvar cliente. Tente novamente.');
+    }
+
+    setNovoNome('');
+    setNovoTelefone('');
+    setNovoPerfil('CLT');
+    setNovaRenda('');
+    setNovoEmpreendimento('');
     setModalAberto(false);
   }
 
-  function excluirCliente(cliente: Cliente) {
-    const novaLista = clientes.filter(c => c.id !== cliente.id);
-    setClientes(novaLista);
-    salvarClientes(novaLista);
+  async function excluirCliente(cliente: Cliente) {
+    try {
+      await deleteDoc(doc(db, 'clientes', cliente.id));
+    } catch (e) {
+      console.log(e);
+      alert('Erro ao excluir cliente.');
+    }
     setModalExcluirCliente(null);
   }
 
-  function atualizarCliente(clienteAtualizado: Cliente) {
-    const novaLista = clientes.map(c => c.id === clienteAtualizado.id ? clienteAtualizado : c);
-    setClientes(novaLista);
-    salvarClientes(novaLista);
+  async function atualizarCliente(clienteAtualizado: Cliente) {
+    const { id, ...dados } = clienteAtualizado;
     setClienteSelecionado(clienteAtualizado);
+    try {
+      await updateDoc(doc(db, 'clientes', id), dados);
+    } catch (e) {
+      console.log(e);
+      alert('Erro ao salvar alterações. Verifique sua conexão.');
+    }
   }
 
-  if (carregando) return (
-    <View style={[s.container, { justifyContent: 'center', alignItems: 'center' }]}>
-      <Text style={{ color: '#888', fontSize: 15 }}>Carregando...</Text>
-    </View>
-  );
+  async function sair() {
+    await signOut(auth);
+  }
 
-  if (tela === 'checklist' && clienteSelecionado) return (
-    <ChecklistScreen
-      cliente={clienteSelecionado}
-      voltar={() => setTela('lista')}
-      onAtualizar={atualizarCliente}
-      onExcluir={(c) => {
-        excluirCliente(c);
-        setTela('lista');
-      }}
-    />
-  );
+  if (carregando) {
+    return (
+      <View style={[s.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={{ color: '#888', fontSize: 15 }}>Carregando...</Text>
+      </View>
+    );
+  }
+
+  if (tela === 'checklist' && clienteSelecionado) {
+    return (
+      <ChecklistScreen
+        cliente={clienteSelecionado}
+        voltar={() => setTela('lista')}
+        onAtualizar={atualizarCliente}
+        onExcluir={(c) => {
+          excluirCliente(c);
+          setTela('lista');
+        }}
+      />
+    );
+  }
 
   return (
     <View style={s.container}>
@@ -211,31 +372,50 @@ export default function HomeScreen() {
           <View>
             <Text style={s.headerTitulo}>Meus Clientes</Text>
             <Text style={s.headerSub}>MCMV — Checklist de Documentação</Text>
+            <Text style={[s.headerSub, { marginTop: 2 }]}>👤 {user.email}</Text>
           </View>
-          <TouchableOpacity style={s.btnNovo} onPress={() => setModalAberto(true)}>
-            <Text style={s.btnNovoTexto}>+ Novo</Text>
-          </TouchableOpacity>
+          <View style={{ alignItems: 'flex-end', gap: 8 }}>
+            <TouchableOpacity style={s.btnNovo} onPress={() => setModalAberto(true)}>
+              <Text style={s.btnNovoTexto}>+ Novo</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={sair}>
+              <Text style={s.btnSairTexto}>Sair</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
       <ScrollView style={s.scroll}>
         <Text style={s.secao}>Clientes ({clientes.length})</Text>
+
+        {clientes.length === 0 && (
+          <Text style={{ color: '#999', fontSize: 13, textAlign: 'center', marginTop: 40 }}>
+            Nenhum cliente cadastrado ainda.{'\n'}Toque em "+ Novo" para adicionar.
+          </Text>
+        )}
+
         {clientes.map(c => {
           const entregues = c.docs.filter(d => d.entregue).length;
           const total = c.docs.length;
-          const pct = Math.round((entregues / total) * 100);
+          const pct = total > 0 ? Math.round((entregues / total) * 100) : 0;
           const pendentes = total - entregues;
           const foraDoMCMV = c.faixa === 'Fora do MCMV';
           return (
             <View key={c.id} style={s.cardWrapper}>
               <TouchableOpacity style={s.card} onPress={() => abrirCliente(c)}>
                 <View style={s.avatar}>
-                  <Text style={s.avatarTexto}>{c.nome.split(' ').map(n => n[0]).slice(0, 2).join('')}</Text>
+                  <Text style={s.avatarTexto}>
+                    {c.nome.split(' ').map(n => n[0]).slice(0, 2).join('')}
+                  </Text>
                 </View>
                 <View style={s.cardInfo}>
                   <Text style={s.cardNome}>{c.nome}</Text>
-                  <Text style={s.cardPerfil}>{c.perfil} · {foraDoMCMV ? 'Fora do MCMV' : `Faixa ${c.faixa}`} · {pendentes} pendentes</Text>
-                  {c.empreendimento ? <Text style={s.cardEmpreendimento}>🏢 {c.empreendimento}</Text> : null}
+                  <Text style={s.cardPerfil}>
+                    {c.perfil} · {foraDoMCMV ? 'Fora do MCMV' : `Faixa ${c.faixa}`} · {pendentes} pendentes
+                  </Text>
+                  {c.empreendimento ? (
+                    <Text style={s.cardEmpreendimento}>🏢 {c.empreendimento}</Text>
+                  ) : null}
                 </View>
                 <Text style={[s.pct, pct === 100 && { color: '#2ecc71' }, foraDoMCMV && { color: '#e74c3c' }]}>
                   {foraDoMCMV ? '—' : `${pct}%`}
@@ -254,12 +434,16 @@ export default function HomeScreen() {
         <View style={s.modalFundo}>
           <View style={s.modalBox}>
             <Text style={s.modalTitulo}>Novo Cliente</Text>
+
             <Text style={s.label}>Nome completo</Text>
             <TextInput style={s.input} placeholder="Ex: João da Silva" value={novoNome} onChangeText={setNovoNome} placeholderTextColor="#aaa" />
+
             <Text style={s.label}>Telefone (WhatsApp)</Text>
             <TextInput style={s.input} placeholder="Ex: 81999990000" value={novoTelefone} onChangeText={setNovoTelefone} keyboardType="phone-pad" placeholderTextColor="#aaa" />
+
             <Text style={s.label}>Empreendimento</Text>
             <TextInput style={s.input} placeholder="Ex: Mirante Belvedere" value={novoEmpreendimento} onChangeText={setNovoEmpreendimento} placeholderTextColor="#aaa" />
+
             <Text style={s.label}>Perfil profissional</Text>
             <View style={s.opcoes}>
               {(['CLT', 'Autônomo', 'Func. Público'] as Perfil[]).map(p => (
@@ -268,15 +452,20 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+
             <Text style={s.label}>Renda familiar (R$)</Text>
             <TextInput style={s.input} placeholder="Ex: 3200" value={novaRenda} onChangeText={setNovaRenda} keyboardType="numeric" placeholderTextColor="#aaa" />
+
             {faixaPreview && (
               <View style={[s.faixaBox, faixaPreview === 'Fora do MCMV' ? s.faixaBoxErro : s.faixaBoxOk]}>
                 <Text style={[s.faixaTexto, faixaPreview === 'Fora do MCMV' ? s.faixaTextoErro : s.faixaTextoOk]}>
-                  {faixaPreview === 'Fora do MCMV' ? 'Renda acima do limite do MCMV (R$ 13.000)' : `Faixa ${faixaPreview} — cliente elegível ao MCMV`}
+                  {faixaPreview === 'Fora do MCMV'
+                    ? 'Renda acima do limite do MCMV (R$ 13.000)'
+                    : `Faixa ${faixaPreview} — cliente elegível ao MCMV`}
                 </Text>
               </View>
             )}
+
             <View style={s.modalBotoes}>
               <TouchableOpacity style={s.btnCancelar} onPress={() => setModalAberto(false)}>
                 <Text style={s.btnCancelarTexto}>Cancelar</Text>
@@ -311,6 +500,8 @@ export default function HomeScreen() {
     </View>
   );
 }
+
+// ─── TELA CHECKLIST ───────────────────────────────────────────────────────────
 
 function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir }: {
   cliente: Cliente; voltar: () => void;
@@ -602,6 +793,8 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir }: {
   );
 }
 
+// ─── ESTILOS ──────────────────────────────────────────────────────────────────
+
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   header: { backgroundColor: '#1a5276', padding: 20, paddingTop: 60 },
@@ -611,6 +804,7 @@ const s = StyleSheet.create({
   voltar: { color: 'rgba(255,255,255,0.8)', fontSize: 13, marginBottom: 8 },
   btnNovo: { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 6 },
   btnNovoTexto: { color: '#fff', fontSize: 13, fontWeight: '500' },
+  btnSairTexto: { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '500', textDecorationLine: 'underline' },
   btnExcluirHeader: { backgroundColor: 'rgba(231,76,60,0.3)', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6 },
   btnExcluirHeaderTexto: { color: '#fff', fontSize: 12, fontWeight: '500' },
   barraFundo: { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 10, height: 6, marginTop: 14 },
@@ -678,4 +872,8 @@ const s = StyleSheet.create({
   btnCancelarTexto: { color: '#888', fontWeight: '500' },
   btnSalvar: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: '#1a5276', alignItems: 'center' },
   btnSalvarTexto: { color: '#fff', fontWeight: '600' },
+  loginTitulo: { fontSize: 24, fontWeight: '700', color: '#1a5276', textAlign: 'center' },
+  loginSub: { fontSize: 14, color: '#888', textAlign: 'center', marginTop: 6, marginBottom: 10 },
+  loginErro: { color: '#e74c3c', fontSize: 13, marginTop: 12, textAlign: 'center' },
+  loginLink: { color: '#1a5276', fontSize: 13, fontWeight: '500' },
 });
