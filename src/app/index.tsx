@@ -127,6 +127,7 @@ export default function HomeScreen() {
   const [novoPerfil, setNovoPerfil] = useState<Perfil>('CLT');
   const [novaRenda, setNovaRenda] = useState('');
   const [novoEmpreendimento, setNovoEmpreendimento] = useState('');
+  const [modalExcluirCliente, setModalExcluirCliente] = useState<Cliente | null>(null);
 
   const faixaPreview = novaRenda ? calcularFaixa(parseFloat(novaRenda.replace(',', '.'))) : null;
 
@@ -171,6 +172,13 @@ export default function HomeScreen() {
     setModalAberto(false);
   }
 
+  function excluirCliente(cliente: Cliente) {
+    const novaLista = clientes.filter(c => c.id !== cliente.id);
+    setClientes(novaLista);
+    salvarClientes(novaLista);
+    setModalExcluirCliente(null);
+  }
+
   function atualizarCliente(clienteAtualizado: Cliente) {
     const novaLista = clientes.map(c => c.id === clienteAtualizado.id ? clienteAtualizado : c);
     setClientes(novaLista);
@@ -185,7 +193,15 @@ export default function HomeScreen() {
   );
 
   if (tela === 'checklist' && clienteSelecionado) return (
-    <ChecklistScreen cliente={clienteSelecionado} voltar={() => setTela('lista')} onAtualizar={atualizarCliente} />
+    <ChecklistScreen
+      cliente={clienteSelecionado}
+      voltar={() => setTela('lista')}
+      onAtualizar={atualizarCliente}
+      onExcluir={(c) => {
+        excluirCliente(c);
+        setTela('lista');
+      }}
+    />
   );
 
   return (
@@ -211,23 +227,29 @@ export default function HomeScreen() {
           const pendentes = total - entregues;
           const foraDoMCMV = c.faixa === 'Fora do MCMV';
           return (
-            <TouchableOpacity key={c.id} style={s.card} onPress={() => abrirCliente(c)}>
-              <View style={s.avatar}>
-                <Text style={s.avatarTexto}>{c.nome.split(' ').map(n => n[0]).slice(0, 2).join('')}</Text>
-              </View>
-              <View style={s.cardInfo}>
-                <Text style={s.cardNome}>{c.nome}</Text>
-                <Text style={s.cardPerfil}>{c.perfil} · {foraDoMCMV ? 'Fora do MCMV' : `Faixa ${c.faixa}`} · {pendentes} pendentes</Text>
-                {c.empreendimento ? <Text style={s.cardEmpreendimento}>🏢 {c.empreendimento}</Text> : null}
-              </View>
-              <Text style={[s.pct, pct === 100 && { color: '#2ecc71' }, foraDoMCMV && { color: '#e74c3c' }]}>
-                {foraDoMCMV ? '—' : `${pct}%`}
-              </Text>
-            </TouchableOpacity>
+            <View key={c.id} style={s.cardWrapper}>
+              <TouchableOpacity style={s.card} onPress={() => abrirCliente(c)}>
+                <View style={s.avatar}>
+                  <Text style={s.avatarTexto}>{c.nome.split(' ').map(n => n[0]).slice(0, 2).join('')}</Text>
+                </View>
+                <View style={s.cardInfo}>
+                  <Text style={s.cardNome}>{c.nome}</Text>
+                  <Text style={s.cardPerfil}>{c.perfil} · {foraDoMCMV ? 'Fora do MCMV' : `Faixa ${c.faixa}`} · {pendentes} pendentes</Text>
+                  {c.empreendimento ? <Text style={s.cardEmpreendimento}>🏢 {c.empreendimento}</Text> : null}
+                </View>
+                <Text style={[s.pct, pct === 100 && { color: '#2ecc71' }, foraDoMCMV && { color: '#e74c3c' }]}>
+                  {foraDoMCMV ? '—' : `${pct}%`}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.btnExcluirCard} onPress={() => setModalExcluirCliente(c)}>
+                <Text style={s.btnExcluirCardTexto}>🗑</Text>
+              </TouchableOpacity>
+            </View>
           );
         })}
       </ScrollView>
 
+      {/* Modal Novo Cliente */}
       <Modal visible={modalAberto} animationType="slide" transparent>
         <View style={s.modalFundo}>
           <View style={s.modalBox}>
@@ -266,12 +288,34 @@ export default function HomeScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Modal Confirmar Exclusão de Cliente */}
+      <Modal visible={modalExcluirCliente !== null} animationType="fade" transparent>
+        <View style={s.modalFundo}>
+          <View style={[s.modalBox, { paddingBottom: 30 }]}>
+            <Text style={s.modalTitulo}>Excluir cliente?</Text>
+            <Text style={{ color: '#555', fontSize: 14, marginBottom: 8 }}>
+              Tem certeza que deseja excluir <Text style={{ fontWeight: '600' }}>{modalExcluirCliente?.nome}</Text>? Esta ação não pode ser desfeita.
+            </Text>
+            <View style={s.modalBotoes}>
+              <TouchableOpacity style={s.btnCancelar} onPress={() => setModalExcluirCliente(null)}>
+                <Text style={s.btnCancelarTexto}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[s.btnSalvar, { backgroundColor: '#e74c3c' }]} onPress={() => modalExcluirCliente && excluirCliente(modalExcluirCliente)}>
+                <Text style={s.btnSalvarTexto}>Excluir</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
-function ChecklistScreen({ cliente, voltar, onAtualizar }: {
-  cliente: Cliente; voltar: () => void; onAtualizar: (c: Cliente) => void;
+function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir }: {
+  cliente: Cliente; voltar: () => void;
+  onAtualizar: (c: Cliente) => void;
+  onExcluir: (c: Cliente) => void;
 }) {
   const [docs, setDocs] = useState<Documento[]>(cliente.docs);
   const [modalObs, setModalObs] = useState<number | null>(null);
@@ -282,6 +326,7 @@ function ChecklistScreen({ cliente, voltar, onAtualizar }: {
   const [editandoEmpreendimento, setEditandoEmpreendimento] = useState(false);
   const [empreendimentoTexto, setEmpreendimentoTexto] = useState(cliente.empreendimento || '');
   const [baixandoZip, setBaixandoZip] = useState(false);
+  const [modalExcluir, setModalExcluir] = useState(false);
 
   const entregues = docs.filter(d => d.entregue).length;
   const pct = Math.round((entregues / docs.length) * 100);
@@ -311,6 +356,10 @@ function ChecklistScreen({ cliente, voltar, onAtualizar }: {
     setModalObs(null);
   }
 
+  function removerAnexo(i: number) {
+    salvar(docs.map((d, idx) => idx === i ? { ...d, arquivoBase64: undefined, arquivoNome: undefined } : d));
+  }
+
   function abrirUpload(i: number) {
     if (Platform.OS !== 'web') return;
     const input = document.createElement('input');
@@ -329,87 +378,46 @@ function ChecklistScreen({ cliente, voltar, onAtualizar }: {
     input.click();
   }
 
-  function baixarImagem(doc: Documento) {
-    if (!doc.arquivoBase64 || Platform.OS !== 'web') return;
-    const a = document.createElement('a');
-    a.href = doc.arquivoBase64;
-    a.download = `${doc.nome.replace(/\s+/g, '_')}.png`;
-    a.click();
-  }
-
   async function baixarTodosComoZip() {
-  if (Platform.OS !== 'web') return;
-  const docsComArquivo = docs.filter(d => d.arquivoBase64);
-  if (docsComArquivo.length === 0) {
-    alert('Nenhum documento foi anexado ainda.');
-    return;
-  }
-  setBaixandoZip(true);
-  try {
-    for (const doc of docsComArquivo) {
-      if (!doc.arquivoBase64) continue;
-      const nomeArquivo = `${cliente.nome.replace(/\s+/g, '_')}_${doc.nome.replace(/[^a-zA-Z0-9]/g, '_')}`;
-      const win = window.open('', '_blank');
-      if (!win) continue;
-      win.document.write(`
-        <html>
-          <head>
-            <title>${nomeArquivo}</title>
-            <style>
-              * { margin: 0; padding: 0; box-sizing: border-box; }
-              body { display: flex; justify-content: center; align-items: center; min-height: 100vh; background: white; }
-              img { max-width: 100%; max-height: 100vh; object-fit: contain; }
-              @media print { body { margin: 0; } img { width: 100%; height: auto; } }
-            </style>
-          </head>
-          <body>
-            <img src="${doc.arquivoBase64}" />
-            <script>
-              window.onload = function() {
-                setTimeout(function() { window.print(); }, 500);
-              };
-            </script>
-          </body>
-        </html>
-      `);
-      win.document.close();
-      await new Promise(r => setTimeout(r, 1000));
+    if (Platform.OS !== 'web') return;
+    const docsComArquivo = docs.filter(d => d.arquivoBase64);
+    if (docsComArquivo.length === 0) {
+      alert('Nenhum documento foi anexado ainda.');
+      return;
     }
-  } catch (err) {
-    alert('Erro ao abrir os documentos.');
-  } finally {
-    setBaixandoZip(false);
+    setBaixandoZip(true);
+    try {
+      for (const doc of docsComArquivo) {
+        if (!doc.arquivoBase64) continue;
+        const nomeArquivo = `${cliente.nome.replace(/\s+/g, '_')}_${doc.nome.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        const win = window.open('', '_blank');
+        if (!win) continue;
+        win.document.write(`
+          <html>
+            <head>
+              <title>${nomeArquivo}</title>
+              <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body { display: flex; justify-content: center; align-items: center; min-height: 100vh; background: white; }
+                img { max-width: 100%; max-height: 100vh; object-fit: contain; }
+                @media print { body { margin: 0; } img { width: 100%; height: auto; } }
+              </style>
+            </head>
+            <body>
+              <img src="${doc.arquivoBase64}" />
+              <script>window.onload = function() { setTimeout(function() { window.print(); }, 500); };<\/script>
+            </body>
+          </html>
+        `);
+        win.document.close();
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    } catch (err) {
+      alert('Erro ao abrir os documentos.');
+    } finally {
+      setBaixandoZip(false);
+    }
   }
-}
-
-function gerarPDFSimples(jpegDataUrl: string, largura: number, altura: number): Uint8Array {
-  const base64 = jpegDataUrl.split(',')[1];
-  const imgBytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
-  const imgLen = imgBytes.length;
-  const w = (largura * 72 / 96).toFixed(2);
-  const h = (altura * 72 / 96).toFixed(2);
-
-  const enc = new TextEncoder();
-  const obj1 = enc.encode('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
-  const obj2 = enc.encode('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n');
-  const obj3 = enc.encode(`3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${w} ${h}] /Contents 4 0 R /Resources << /XObject << /Im1 5 0 R >> >> >>\nendobj\n`);
-  const obj4 = enc.encode(`4 0 obj\n<< /Length 32 >>\nstream\nq ${w} 0 0 ${h} 0 0 cm /Im1 Do Q\nendstream\nendobj\n`);
-  const obj5Header = enc.encode(`5 0 obj\n<< /Type /XObject /Subtype /Image /Width ${largura} /Height ${altura} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imgLen} >>\nstream\n`);
-  const obj5Footer = enc.encode('\nendstream\nendobj\n');
-
-  const header = enc.encode('%PDF-1.4\n');
-  const parts = [header, obj1, obj2, obj3, obj4, obj5Header, imgBytes, obj5Footer];
-  const totalLen = parts.reduce((a, b) => a + b.length, 0);
-  const result = new Uint8Array(totalLen);
-  let offset = 0;
-  for (const p of parts) { result.set(p, offset); offset += p.length; }
-
-  const xref = `xref\n0 6\n0000000000 65535 f \n${String(header.length).padStart(10, '0')} 00000 n \ntrailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${totalLen}\n%%EOF`;
-  const xrefBytes = enc.encode(xref);
-  const final = new Uint8Array(totalLen + xrefBytes.length);
-  final.set(result); final.set(xrefBytes, totalLen);
-  return final;
-}
 
   async function enviarEmail() {
     if (!emailDestino.trim()) return;
@@ -425,7 +433,6 @@ function gerarPDFSimples(jpegDataUrl: string, largura: number, altura: number): 
       (docsPendentes.length > 0
         ? `\n\n⏳ Documentos pendentes (${docsPendentes.length}):\n` + docsPendentes.map(d => `  • ${d.nome}`).join('\n')
         : '\n\nTodos os documentos foram entregues! ✅');
-
     try {
       const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
         method: 'POST',
@@ -434,12 +441,7 @@ function gerarPDFSimples(jpegDataUrl: string, largura: number, altura: number): 
           service_id: 'service_5kcdmca',
           template_id: 'template_loetntf',
           user_id: 'UTaEmAAnR1rOz-qgQ',
-          template_params: {
-            to_email: emailDestino,
-            cliente_nome: cliente.nome,
-            empreendimento: cliente.empreendimento || 'Não informado',
-            corpo,
-          },
+          template_params: { to_email: emailDestino, cliente_nome: cliente.nome, empreendimento: cliente.empreendimento || 'Não informado', corpo },
         }),
       });
       if (res.ok) { alert('E-mail enviado com sucesso!'); setEmailModal(false); setEmailDestino(''); }
@@ -467,7 +469,12 @@ function gerarPDFSimples(jpegDataUrl: string, largura: number, altura: number): 
   return (
     <View style={s.container}>
       <View style={s.header}>
-        <TouchableOpacity onPress={voltar}><Text style={s.voltar}>← Voltar</Text></TouchableOpacity>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <TouchableOpacity onPress={voltar}><Text style={s.voltar}>← Voltar</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => setModalExcluir(true)} style={s.btnExcluirHeader}>
+            <Text style={s.btnExcluirHeaderTexto}>🗑 Excluir</Text>
+          </TouchableOpacity>
+        </View>
         <Text style={s.headerTitulo}>{cliente.nome}</Text>
         <Text style={s.headerSub}>{cliente.perfil} · Faixa {cliente.faixa} · Renda R$ {cliente.renda.toLocaleString('pt-BR')}</Text>
         {cliente.telefone ? <Text style={[s.headerSub, { marginTop: 2 }]}>📱 {cliente.telefone}</Text> : null}
@@ -511,11 +518,11 @@ function gerarPDFSimples(jpegDataUrl: string, largura: number, altura: number): 
                 <Text style={s.btnAcaoTexto}>{doc.observacao ? '📝 Ver obs.' : '📝 Anotar'}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={s.btnAcao} onPress={() => abrirUpload(i)}>
-                <Text style={s.btnAcaoTexto}>{doc.arquivoBase64 ? '🖼 Trocar imagem' : '📎 Anexar'}</Text>
+                <Text style={s.btnAcaoTexto}>{doc.arquivoBase64 ? '🖼 Trocar' : '📎 Anexar'}</Text>
               </TouchableOpacity>
               {doc.arquivoBase64 && (
-                <TouchableOpacity style={s.btnAcao} onPress={() => baixarImagem(doc)}>
-                  <Text style={s.btnAcaoTexto}>⬇ Baixar</Text>
+                <TouchableOpacity style={[s.btnAcao, { backgroundColor: '#fdecea' }]} onPress={() => removerAnexo(i)}>
+                  <Text style={[s.btnAcaoTexto, { color: '#e74c3c' }]}>🗑 Remover</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -531,18 +538,17 @@ function gerarPDFSimples(jpegDataUrl: string, largura: number, altura: number): 
         ))}
 
         <TouchableOpacity style={s.btnZip} onPress={baixarTodosComoZip} disabled={baixandoZip}>
-          <Text style={s.btnZipTexto}>{baixandoZip ? '⏳ Gerando ZIP...' : '📦 Baixar todos os documentos em PDF'}</Text>
+          <Text style={s.btnZipTexto}>{baixandoZip ? '⏳ Abrindo documentos...' : '📄 Abrir documentos para salvar em PDF'}</Text>
         </TouchableOpacity>
-
         <TouchableOpacity style={s.btnWhatsApp} onPress={enviarWhatsApp}>
           <Text style={s.btnWhatsAppTexto}>{entregues === docs.length ? '🎉 Enviar parabéns ao cliente' : '💬 Enviar pendências pelo WhatsApp'}</Text>
         </TouchableOpacity>
-
         <TouchableOpacity style={s.btnEmail} onPress={() => setEmailModal(true)}>
           <Text style={s.btnEmailTexto}>📧 Enviar documentação por e-mail</Text>
         </TouchableOpacity>
       </ScrollView>
 
+      {/* Modal Observação */}
       <Modal visible={modalObs !== null} animationType="slide" transparent>
         <View style={s.modalFundo}>
           <View style={s.modalBox}>
@@ -557,6 +563,7 @@ function gerarPDFSimples(jpegDataUrl: string, largura: number, altura: number): 
         </View>
       </Modal>
 
+      {/* Modal E-mail */}
       <Modal visible={emailModal} animationType="slide" transparent>
         <View style={s.modalFundo}>
           <View style={s.modalBox}>
@@ -568,6 +575,24 @@ function gerarPDFSimples(jpegDataUrl: string, largura: number, altura: number): 
               <TouchableOpacity style={s.btnCancelar} onPress={() => setEmailModal(false)}><Text style={s.btnCancelarTexto}>Cancelar</Text></TouchableOpacity>
               <TouchableOpacity style={[s.btnSalvar, enviandoEmail && { opacity: 0.6 }]} onPress={enviarEmail} disabled={enviandoEmail}>
                 <Text style={s.btnSalvarTexto}>{enviandoEmail ? 'Enviando...' : 'Enviar'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Confirmar Exclusão */}
+      <Modal visible={modalExcluir} animationType="fade" transparent>
+        <View style={s.modalFundo}>
+          <View style={[s.modalBox, { paddingBottom: 30 }]}>
+            <Text style={s.modalTitulo}>Excluir cliente?</Text>
+            <Text style={{ color: '#555', fontSize: 14, marginBottom: 8 }}>
+              Tem certeza que deseja excluir <Text style={{ fontWeight: '600' }}>{cliente.nome}</Text>? Esta ação não pode ser desfeita.
+            </Text>
+            <View style={s.modalBotoes}>
+              <TouchableOpacity style={s.btnCancelar} onPress={() => setModalExcluir(false)}><Text style={s.btnCancelarTexto}>Cancelar</Text></TouchableOpacity>
+              <TouchableOpacity style={[s.btnSalvar, { backgroundColor: '#e74c3c' }]} onPress={() => { setModalExcluir(false); onExcluir(cliente); }}>
+                <Text style={s.btnSalvarTexto}>Excluir</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -586,13 +611,18 @@ const s = StyleSheet.create({
   voltar: { color: 'rgba(255,255,255,0.8)', fontSize: 13, marginBottom: 8 },
   btnNovo: { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 6 },
   btnNovoTexto: { color: '#fff', fontSize: 13, fontWeight: '500' },
+  btnExcluirHeader: { backgroundColor: 'rgba(231,76,60,0.3)', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6 },
+  btnExcluirHeaderTexto: { color: '#fff', fontSize: 12, fontWeight: '500' },
   barraFundo: { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 10, height: 6, marginTop: 14 },
   barraFill: { backgroundColor: '#2ecc71', borderRadius: 10, height: 6 },
   barraLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
   barraTexto: { color: 'rgba(255,255,255,0.7)', fontSize: 11 },
   scroll: { padding: 16 },
   secao: { fontSize: 11, fontWeight: '600', color: '#888', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10, marginTop: 6 },
-  card: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 10, gap: 12 },
+  cardWrapper: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 8 },
+  card: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 14, gap: 12 },
+  btnExcluirCard: { backgroundColor: '#fdecea', borderRadius: 12, padding: 12, alignItems: 'center', justifyContent: 'center' },
+  btnExcluirCardTexto: { fontSize: 16 },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#d6eaf8', alignItems: 'center', justifyContent: 'center' },
   avatarTexto: { fontSize: 13, fontWeight: '600', color: '#1a5276' },
   cardInfo: { flex: 1 },
@@ -602,7 +632,7 @@ const s = StyleSheet.create({
   pct: { fontSize: 13, fontWeight: '600', color: '#1a5276' },
   docCard: { backgroundColor: '#fff', borderRadius: 12, marginBottom: 8, overflow: 'hidden' },
   docItem: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 },
-  docAcoes: { flexDirection: 'row', paddingHorizontal: 14, paddingBottom: 10, gap: 8 },
+  docAcoes: { flexDirection: 'row', paddingHorizontal: 14, paddingBottom: 10, gap: 8, flexWrap: 'wrap' },
   btnAcao: { backgroundColor: '#f0f0f0', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
   btnAcaoTexto: { fontSize: 11, color: '#555', fontWeight: '500' },
   obsBox: { backgroundColor: '#fffbea', paddingHorizontal: 14, paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#f0e68c' },
