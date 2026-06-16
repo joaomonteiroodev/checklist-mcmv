@@ -52,6 +52,7 @@ const C = {
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
 type Perfil = 'CLT' | 'Autônomo' | 'Func. Público';
 type Aba = 'clientes' | 'dashboard' | 'configuracoes';
+type Role = 'corretor' | 'gestor';
 
 interface Documento {
   id: number;
@@ -71,6 +72,8 @@ interface Cliente {
   empreendimento: string;
   docs: Documento[];
   corretorId: string;
+  corretorEmail?: string;
+  gestorId?: string;
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -88,15 +91,6 @@ function getLabelFaixa(faixa: string): string {
 }
 
 function getDocsPorPerfil(perfil: Perfil): Omit<Documento, 'entregue' | 'observacao'>[] {
-  const comuns = [
-    { id: 1, nome: 'RG e CPF', sub: 'Documento de identificação' },
-    { id: 2, nome: 'Certidão de Casamento | Nascimento | Óbito', sub: 'Conforme estado civil' },
-    { id: 3, nome: 'E-mail', sub: 'Endereço de e-mail ativo' },
-    { id: 4, nome: 'Comprovante de residência', sub: 'Últimos 3 meses' },
-    { id: 5, nome: 'CTPS', sub: 'Carteira de trabalho' },
-    { id: 6, nome: 'Extrato do FGTS', sub: 'Últimos 24 meses' },
-    { id: 7, nome: 'Tela do FGTS', sub: 'Print ou cópia da tela' },
-  ];
   if (perfil === 'CLT') {
     return [
       { id: 1, nome: 'RG e CPF', sub: 'Documento de identificação' },
@@ -135,7 +129,15 @@ function getDocsPorPerfil(perfil: Perfil): Omit<Documento, 'entregue' | 'observa
       { id: 8, nome: 'Imposto de renda', sub: 'Se declarar' },
     ];
   }
-  return comuns;
+  return [
+    { id: 1, nome: 'RG e CPF', sub: 'Documento de identificação' },
+    { id: 2, nome: 'Certidão de Casamento | Nascimento | Óbito', sub: 'Conforme estado civil' },
+    { id: 3, nome: 'E-mail', sub: 'Endereço de e-mail ativo' },
+    { id: 4, nome: 'Comprovante de residência', sub: 'Últimos 3 meses' },
+    { id: 5, nome: 'CTPS', sub: 'Carteira de trabalho' },
+    { id: 6, nome: 'Extrato do FGTS', sub: 'Últimos 24 meses' },
+    { id: 7, nome: 'Tela do FGTS', sub: 'Print ou cópia da tela' },
+  ];
 }
 
 function inicializarDocs(perfil: Perfil): Documento[] {
@@ -202,6 +204,8 @@ function LoginScreen() {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [modoCadastro, setModoCadastro] = useState(false);
+  const [role, setRole] = useState<Role>('corretor');
+  const [gestorCodigo, setGestorCodigo] = useState('');
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(false);
   const [senhaEnviada, setSenhaEnviada] = useState(false);
@@ -218,8 +222,18 @@ function LoginScreen() {
     if (!email.trim() || !senha.trim()) { setErro('Preencha e-mail e senha.'); return; }
     setErro(''); setCarregando(true);
     try {
-      if (modoCadastro) await createUserWithEmailAndPassword(auth, email.trim(), senha);
-      else await signInWithEmailAndPassword(auth, email.trim(), senha);
+      if (modoCadastro) {
+        const cred = await createUserWithEmailAndPassword(auth, email.trim(), senha);
+        const gestorId = (role === 'corretor' && gestorCodigo.trim()) ? gestorCodigo.trim() : null;
+        await addDoc(collection(db, 'usuarios'), {
+          uid: cred.user.uid,
+          email: email.trim(),
+          role,
+          gestorId,
+        });
+      } else {
+        await signInWithEmailAndPassword(auth, email.trim(), senha);
+      }
     } catch (e: any) {
       setErro(traduzirErroAuth(e.code || ''));
     } finally { setCarregando(false); }
@@ -238,6 +252,37 @@ function LoginScreen() {
       <View style={s.loginCard}>
         <Text style={s.loginCardTitulo}>{modoCadastro ? 'Criar conta' : 'Bem-vindo de volta'}</Text>
         <Text style={s.loginCardSub}>{modoCadastro ? 'Preencha os dados para começar' : 'Acesse para gerenciar seus clientes'}</Text>
+
+        {modoCadastro && (
+          <>
+            <Text style={s.label}>Tipo de conta</Text>
+            <View style={s.opcoes}>
+              {(['corretor', 'gestor'] as Role[]).map(r => (
+                <TouchableOpacity key={r} style={[s.opcao, role === r && s.opcaoAtiva]} onPress={() => setRole(r)}>
+                  <Text style={[s.opcaoTexto, role === r && s.opcaoTextoAtivo]}>
+                    {r === 'corretor' ? '👤 Corretor' : '🏢 Gestor'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {role === 'corretor' && (
+              <>
+                <Text style={s.label}>Código do gestor (opcional)</Text>
+                <TextInput
+                  style={s.input}
+                  placeholder="Cole o UID do seu gestor aqui"
+                  value={gestorCodigo}
+                  onChangeText={setGestorCodigo}
+                  autoCapitalize="none"
+                  placeholderTextColor={C.cinza}
+                />
+                <Text style={{ fontSize: 11, color: C.cinza, marginTop: 4 }}>
+                  Peça o código para o seu gestor nas Configurações do app.
+                </Text>
+              </>
+            )}
+          </>
+        )}
 
         <Text style={s.label}>E-mail</Text>
         <TextInput style={s.input} placeholder="seu@email.com" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholderTextColor={C.cinza} />
@@ -276,6 +321,8 @@ function AppPrincipal({ user }: { user: User }) {
   const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(null);
   const [modalAberto, setModalAberto] = useState(false);
   const [carregando, setCarregando] = useState(true);
+  const [userRole, setUserRole] = useState<Role>('corretor');
+  const [userGestorId, setUserGestorId] = useState<string | null>(null);
   const [novoNome, setNovoNome] = useState('');
   const [novoTelefone, setNovoTelefone] = useState('');
   const [novoPerfil, setNovoPerfil] = useState<Perfil>('CLT');
@@ -285,15 +332,34 @@ function AppPrincipal({ user }: { user: User }) {
 
   const faixaPreview = novaRenda ? calcularFaixa(parseFloat(novaRenda.replace(',', '.'))) : null;
 
+  // Busca o perfil do usuário (role e gestorId)
   useEffect(() => {
-    const q = query(collection(db, 'clientes'), where('corretorId', '==', user.uid));
+    const q = query(collection(db, 'usuarios'), where('uid', '==', user.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        const data = snapshot.docs[0].data();
+        setUserRole(data.role || 'corretor');
+        setUserGestorId(data.gestorId || null);
+      }
+    });
+    return unsubscribe;
+  }, [user.uid]);
+
+  // Busca clientes: corretor vê só os seus; gestor vê os dos corretores vinculados a ele
+  useEffect(() => {
+    let q;
+    if (userRole === 'gestor') {
+      q = query(collection(db, 'clientes'), where('gestorId', '==', user.uid));
+    } else {
+      q = query(collection(db, 'clientes'), where('corretorId', '==', user.uid));
+    }
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const lista: Cliente[] = snapshot.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Cliente, 'id'>) }));
       setClientes(lista);
       setCarregando(false);
     }, () => setCarregando(false));
     return unsubscribe;
-  }, [user.uid]);
+  }, [user.uid, userRole]);
 
   async function adicionarCliente() {
     if (!novoNome.trim() || !novaRenda.trim()) return;
@@ -304,7 +370,10 @@ function AppPrincipal({ user }: { user: User }) {
         nome: novoNome.trim(), telefone: novoTelefone.trim(),
         perfil: novoPerfil, renda, faixa: calcularFaixa(renda),
         empreendimento: novoEmpreendimento.trim(),
-        docs: inicializarDocs(novoPerfil), corretorId: user.uid,
+        docs: inicializarDocs(novoPerfil),
+        corretorId: user.uid,
+        corretorEmail: user.email,
+        gestorId: userGestorId || null,
       });
     } catch { alert('Erro ao salvar cliente.'); }
     setNovoNome(''); setNovoTelefone(''); setNovoPerfil('CLT');
@@ -337,6 +406,7 @@ function AppPrincipal({ user }: { user: User }) {
         voltar={() => setTela('lista')}
         onAtualizar={atualizarCliente}
         onExcluir={(c) => { excluirCliente(c); setTela('lista'); }}
+        userEmail={user.email}
       />
     );
   }
@@ -355,6 +425,11 @@ function AppPrincipal({ user }: { user: User }) {
         <View style={s.headerLogo}>
           <View style={s.logoBox}><Text style={s.logoCheck}>✓</Text></View>
           <Text style={s.headerNome}>Certus</Text>
+          {userRole === 'gestor' && (
+            <View style={{ backgroundColor: C.dourado, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2, marginLeft: 6 }}>
+              <Text style={{ color: C.verde, fontSize: 10, fontWeight: '700' }}>GESTOR</Text>
+            </View>
+          )}
         </View>
         <Text style={s.headerSub}>
           {abaAtiva === 'clientes' ? 'Documentação MCMV' : abaAtiva === 'dashboard' ? 'Dashboard' : 'Configurações'}
@@ -363,7 +438,9 @@ function AppPrincipal({ user }: { user: User }) {
           <View style={s.headerStats}>
             <View style={s.headerStatItem}>
               <Text style={s.headerStatNum}>{clientes.length}</Text>
-              <Text style={s.headerStatLabel}>Clientes ativos</Text>
+              <Text style={s.headerStatLabel}>
+                {userRole === 'gestor' ? 'Clientes da equipe' : 'Clientes ativos'}
+              </Text>
             </View>
             <View style={s.headerDivider} />
             <View style={s.headerStatItem}>
@@ -379,16 +456,17 @@ function AppPrincipal({ user }: { user: User }) {
         {abaAtiva === 'clientes' && (
           <TelaClientes
             clientes={clientes}
+            userRole={userRole}
             onAbrirCliente={(c) => { setClienteSelecionado(c); setTela('checklist'); }}
             onExcluirCliente={setModalExcluirCliente}
           />
         )}
         {abaAtiva === 'dashboard' && <TelaDashboard clientes={clientes} />}
-        {abaAtiva === 'configuracoes' && <TelaConfiguracoes user={user} />}
+        {abaAtiva === 'configuracoes' && <TelaConfiguracoes user={user} userRole={userRole} />}
       </View>
 
-      {/* FAB */}
-      {abaAtiva === 'clientes' && (
+      {/* FAB — gestor não adiciona clientes */}
+      {abaAtiva === 'clientes' && userRole === 'corretor' && (
         <TouchableOpacity style={s.fab} onPress={() => setModalAberto(true)}>
           <Text style={s.fabIcon}>+</Text>
         </TouchableOpacity>
@@ -477,9 +555,11 @@ function AppPrincipal({ user }: { user: User }) {
     </View>
   );
 }
+
 // ─── ABA CLIENTES ─────────────────────────────────────────────────────────────
-function TelaClientes({ clientes, onAbrirCliente, onExcluirCliente }: {
+function TelaClientes({ clientes, userRole, onAbrirCliente, onExcluirCliente }: {
   clientes: Cliente[];
+  userRole: Role;
   onAbrirCliente: (c: Cliente) => void;
   onExcluirCliente: (c: Cliente) => void;
 }) {
@@ -488,7 +568,11 @@ function TelaClientes({ clientes, onAbrirCliente, onExcluirCliente }: {
       {clientes.length === 0 && (
         <View style={{ alignItems: 'center', marginTop: 60 }}>
           <Text style={{ fontSize: 32, marginBottom: 12 }}>📋</Text>
-          <Text style={{ color: C.cinza, fontSize: 14, textAlign: 'center' }}>Nenhum cliente ainda.{'\n'}Toque no + para adicionar.</Text>
+          <Text style={{ color: C.cinza, fontSize: 14, textAlign: 'center' }}>
+            {userRole === 'gestor'
+              ? 'Nenhum cliente da equipe ainda.\nCorretores precisam informar seu código ao criar conta.'
+              : 'Nenhum cliente ainda.\nToque no + para adicionar.'}
+          </Text>
         </View>
       )}
       {clientes.map(c => {
@@ -507,6 +591,11 @@ function TelaClientes({ clientes, onAbrirCliente, onExcluirCliente }: {
                 <Text style={s.cardNome}>{c.nome}</Text>
                 <Text style={s.cardSub}>{c.perfil} · {getLabelFaixa(c.faixa)} · {pendentes} pendentes</Text>
                 {c.empreendimento ? <Text style={s.cardEmpre}>{c.empreendimento}</Text> : null}
+                {userRole === 'gestor' && c.corretorEmail ? (
+                  <Text style={[s.cardEmpre, { color: C.dourado, fontWeight: '500' }]}>
+                    👤 {c.corretorEmail}
+                  </Text>
+                ) : null}
                 <View style={s.miniBarFundo}>
                   <View style={[s.miniBarFill, { width: `${pct}%` as any, backgroundColor: pct === 100 ? C.verdeMedio : C.dourado }]} />
                 </View>
@@ -515,9 +604,11 @@ function TelaClientes({ clientes, onAbrirCliente, onExcluirCliente }: {
                 {fora ? '—' : `${pct}%`}
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={s.btnLixeira} onPress={() => onExcluirCliente(c)}>
-              <Text style={{ fontSize: 15, color: C.cinza }}>🗑</Text>
-            </TouchableOpacity>
+            {userRole === 'corretor' && (
+              <TouchableOpacity style={s.btnLixeira} onPress={() => onExcluirCliente(c)}>
+                <Text style={{ fontSize: 15, color: C.cinza }}>🗑</Text>
+              </TouchableOpacity>
+            )}
           </View>
         );
       })}
@@ -604,7 +695,7 @@ function TelaDashboard({ clientes }: { clientes: Cliente[] }) {
 }
 
 // ─── ABA CONFIGURAÇÕES ────────────────────────────────────────────────────────
-function TelaConfiguracoes({ user }: { user: User }) {
+function TelaConfiguracoes({ user, userRole }: { user: User; userRole: Role }) {
   const [novaSenha, setNovaSenha] = useState('');
   const [modalSenha, setModalSenha] = useState(false);
   const [erroSenha, setErroSenha] = useState('');
@@ -631,7 +722,7 @@ function TelaConfiguracoes({ user }: { user: User }) {
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 15, fontWeight: '600', color: C.texto }}>{user.email}</Text>
           <View style={s.badgeAtivo}>
-            <Text style={s.badgeAtivoTexto}>Corretor ativo</Text>
+            <Text style={s.badgeAtivoTexto}>{userRole === 'gestor' ? 'Gestor' : 'Corretor ativo'}</Text>
           </View>
         </View>
       </View>
@@ -644,6 +735,26 @@ function TelaConfiguracoes({ user }: { user: User }) {
           <Text style={s.configRowSeta}>›</Text>
         </TouchableOpacity>
       </View>
+
+      {userRole === 'gestor' && (
+        <>
+          <Text style={s.secaoLabel}>EQUIPE</Text>
+          <View style={s.secaoCard}>
+            <View style={s.configRow}>
+              <Text style={s.configRowIcon}>🔑</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={s.configRowLabel}>Seu código de gestor</Text>
+                <Text style={{ fontSize: 11, color: C.cinza, marginTop: 2 }}>
+                  Compartilhe com seus corretores ao criar a conta deles
+                </Text>
+                <Text style={{ fontSize: 11, color: C.dourado, fontWeight: '700', marginTop: 6 }}>
+                  {user.uid}
+                </Text>
+              </View>
+            </View>
+          </View>
+        </>
+      )}
 
       <Text style={s.secaoLabel}>NOTIFICAÇÕES</Text>
       <View style={s.secaoCard}>
@@ -708,11 +819,12 @@ function TelaConfiguracoes({ user }: { user: User }) {
 }
 
 // ─── CHECKLIST ────────────────────────────────────────────────────────────────
-function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir }: {
+function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }: {
   cliente: Cliente;
   voltar: () => void;
   onAtualizar: (c: Cliente) => void;
   onExcluir: (c: Cliente) => void;
+  userEmail: string | null;
 }) {
   const [emailModal, setEmailModal] = useState(false);
   const [emailDestino, setEmailDestino] = useState('');
@@ -726,9 +838,9 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir }: {
   async function enviarEmail() {
     if (!emailDestino.trim()) { alert('Digite o e-mail de destino.'); return; }
     setEnviandoEmail(true);
-    const pendentes = cliente.docs.filter(d => !d.entregue).map(d => `• ${d.nome}`).join('\n');
+    const pendentesLista = cliente.docs.filter(d => !d.entregue).map(d => `• ${d.nome}`).join('\n');
     const entreguesLista = cliente.docs.filter(d => d.entregue).map(d => `✓ ${d.nome}`).join('\n');
-    const corpo = `DOCUMENTOS ENTREGUES:\n${entreguesLista || 'Nenhum'}\n\nDOCUMENTOS PENDENTES:\n${pendentes || 'Nenhum'}`;
+    const corpo = `DOCUMENTOS ENTREGUES:\n${entreguesLista || 'Nenhum'}\n\nDOCUMENTOS PENDENTES:\n${pendentesLista || 'Nenhum'}`;
     try {
       const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
         method: 'POST',
@@ -737,7 +849,14 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir }: {
           service_id: EMAILJS_SERVICE_ID,
           template_id: EMAILJS_TEMPLATE_ID,
           user_id: EMAILJS_PUBLIC_KEY,
-          template_params: { to_email: emailDestino, cliente_nome: cliente.nome, empreendimento: cliente.empreendimento || 'Não informado', corpo },
+          template_params: {
+            to_email: emailDestino,
+            from_email: userEmail || 'certus@imobiliaria.com',
+            from_name: userEmail?.split('@')[0] || 'Corretor Certus',
+            cliente_nome: cliente.nome,
+            empreendimento: cliente.empreendimento || 'Não informado',
+            corpo,
+          },
         }),
       });
       if (res.ok) { alert('E-mail enviado com sucesso!'); setEmailModal(false); setEmailDestino(''); }
@@ -801,6 +920,11 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir }: {
         <View style={s.modalFundo}>
           <View style={s.modalBox}>
             <Text style={s.modalTitulo}>Enviar checklist</Text>
+            {userEmail && (
+              <Text style={{ fontSize: 12, color: C.cinza, marginTop: 4, marginBottom: 8 }}>
+                Enviando como: <Text style={{ color: C.verde, fontWeight: '600' }}>{userEmail}</Text>
+              </Text>
+            )}
             <Text style={s.label}>E-mail de destino</Text>
             <TextInput style={s.input} placeholder="cliente@exemplo.com" value={emailDestino} onChangeText={setEmailDestino} keyboardType="email-address" autoCapitalize="none" placeholderTextColor={C.cinza} />
             <View style={s.modalBotoes}>
@@ -828,6 +952,18 @@ function DocItem({ doc, onToggle, onSalvarObs }: {
   const [obs, setObs] = useState(doc.observacao || '');
   const [salvo, setSalvo] = useState(false);
 
+  function handleSalvar() {
+    onSalvarObs(doc.id, obs);
+    setSalvo(true);
+    setTimeout(() => setSalvo(false), 2000);
+  }
+
+  function handleExcluirObs() {
+    setObs('');
+    onSalvarObs(doc.id, '');
+    setSalvo(false);
+  }
+
   return (
     <View style={[s.docCard, doc.entregue && s.docCardEntregue]}>
       <TouchableOpacity style={s.docRow} onPress={() => setExpandido(!expandido)} activeOpacity={0.7}>
@@ -839,6 +975,9 @@ function DocItem({ doc, onToggle, onSalvarObs }: {
         <View style={{ flex: 1 }}>
           <Text style={[s.docNome, doc.entregue && s.docNomeEntregue]}>{doc.nome}</Text>
           <Text style={s.docSub}>{doc.sub}</Text>
+          {doc.observacao ? (
+            <Text style={s.obsPreview} numberOfLines={1}>💬 {doc.observacao}</Text>
+          ) : null}
         </View>
         {!doc.entregue && (
           <View style={s.badgePendente}>
@@ -850,12 +989,25 @@ function DocItem({ doc, onToggle, onSalvarObs }: {
 
       {expandido && (
         <View style={s.obsBox}>
-          <TextInput style={s.obsInput} placeholder="Adicione uma observação..." value={obs} onChangeText={t => { setObs(t); setSalvo(false); }} multiline placeholderTextColor={C.cinza} />
-          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginTop: 8, gap: 10 }}>
-            {salvo && <Text style={{ fontSize: 12, color: C.verdeMedio }}>Salvo</Text>}
-            <TouchableOpacity style={s.obsSalvar} onPress={() => { onSalvarObs(doc.id, obs); setSalvo(true); }}>
-              <Text style={s.obsSalvarTexto}>Salvar</Text>
+          <Text style={s.obsLabel}>Observação</Text>
+          <TextInput
+            style={s.obsInput}
+            placeholder="Ex: Cliente vai enviar na segunda-feira"
+            value={obs}
+            onChangeText={t => { setObs(t); setSalvo(false); }}
+            multiline
+            placeholderTextColor={C.cinza}
+          />
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+            <TouchableOpacity style={s.obsExcluir} onPress={handleExcluirObs}>
+              <Text style={s.obsExcluirTexto}>🗑 Excluir</Text>
             </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              {salvo && <Text style={{ fontSize: 12, color: C.verdeMedio, fontWeight: '500' }}>✓ Salvo</Text>}
+              <TouchableOpacity style={s.obsSalvar} onPress={handleSalvar}>
+                <Text style={s.obsSalvarTexto}>Salvar</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       )}
@@ -958,7 +1110,7 @@ const s = StyleSheet.create({
 
   // CONFIGURAÇÕES
   configPerfil: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#fff', borderRadius: 20, padding: 16, marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
-  secaoLabel: { fontSize: 11, fontWeight: '700', color: C.cinza, letterSpacing: 0.8, marginBottom: 6, marginTop: 4 },
+  secaoLabel: { fontSize: 11, fontWeight: '700', color: C.cinza, letterSpacing: 0.8, marginBottom: 6, marginTop: 16 },
   configRow: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 },
   configRowIcon: { fontSize: 18 },
   configRowLabel: { fontSize: 14, color: C.texto, fontWeight: '500' },
@@ -985,9 +1137,13 @@ const s = StyleSheet.create({
   badgePendente: { backgroundColor: '#FFF3E0', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   badgePendenteTexto: { fontSize: 10, color: '#E65100', fontWeight: '600' },
   obsBox: { borderTopWidth: 1, borderTopColor: C.cinzaBorda, padding: 14 },
+  obsLabel: { fontSize: 11, fontWeight: '600', color: C.cinza, marginBottom: 6 },
+  obsPreview: { fontSize: 11, color: C.cinza, marginTop: 3, fontStyle: 'italic' },
   obsInput: { backgroundColor: C.cinzaClaro, borderRadius: 10, padding: 10, fontSize: 13, color: C.texto, minHeight: 60 },
   obsSalvar: { backgroundColor: C.verde, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 7 },
   obsSalvarTexto: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  obsExcluir: { backgroundColor: C.erroClaro, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 },
+  obsExcluirTexto: { color: C.erro, fontSize: 12, fontWeight: '600' },
   btnWA: { backgroundColor: C.wa, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   btnWATexto: { color: '#fff', fontWeight: '700', fontSize: 14 },
   btnEmail: { backgroundColor: C.verde, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
