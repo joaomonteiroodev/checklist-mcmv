@@ -544,7 +544,7 @@ function AppPrincipal({ user }: { user: User }) {
           />
         )}
         {abaAtiva === 'dashboard' && <TelaDashboard clientes={clientes} />}
-        {abaAtiva === 'configuracoes' && <TelaConfiguracoes user={user} userRole={userRole} userNome={userNomeCompleto} />}
+        {abaAtiva === 'configuracoes' && <TelaConfiguracoes user={user} userRole={userRole} userNome={userNomeCompleto} userDocId={userDocId} userGestorId={userGestorId} clientes={clientes} />}
       </View>
 
       {/* FAB */}
@@ -965,12 +965,78 @@ function TelaDashboard({ clientes }: { clientes: Cliente[] }) {
 }
 
 // ─── ABA CONFIGURAÇÕES ────────────────────────────────────────────────────────
-function TelaConfiguracoes({ user, userRole, userNome }: { user: User; userRole: Role; userNome: string }) {
+function TelaConfiguracoes({ user, userRole, userNome, userDocId, userGestorId, clientes }: {
+  user: User;
+  userRole: Role;
+  userNome: string;
+  userDocId: string | null;
+  userGestorId: string | null;
+  clientes: Cliente[];
+}) {
   const [novaSenha, setNovaSenha] = useState('');
   const [modalSenha, setModalSenha] = useState(false);
   const [erroSenha, setErroSenha] = useState('');
   const [sucessoSenha, setSucessoSenha] = useState(false);
-  const [notif, setNotif] = useState(true);
+
+  // Notificações
+  const [notifAtiva, setNotifAtiva] = useState(false);
+  const [notifPermissao, setNotifPermissao] = useState<string>('default');
+  const [copiado, setCopiado] = useState(false);
+
+  // Vincular gestor (para corretor)
+  const [modalGestor, setModalGestor] = useState(false);
+  const [novoGestorCodigo, setNovoGestorCodigo] = useState(userGestorId || '');
+  const [salvandoGestor, setSalvandoGestor] = useState(false);
+  const [erroGestor, setErroGestor] = useState('');
+  const [sucessoGestor, setSucessoGestor] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' && 'Notification' in window) {
+      setNotifPermissao((window as any).Notification.permission);
+      // Se já tem permissão, considera ativo
+      if ((window as any).Notification.permission === 'granted') setNotifAtiva(true);
+    }
+  }, []);
+
+  // Dispara notificações de clientes pendentes a cada 4 horas (enquanto o app está aberto)
+  useEffect(() => {
+    if (!notifAtiva || Platform.OS !== 'web') return;
+    function dispararLembretes() {
+      const comPendencias = clientes.filter(c => c.docs.some(d => !d.entregue) && c.status !== 'Aprovado' && c.status !== 'Reprovado');
+      comPendencias.forEach(c => {
+        const pendentes = c.docs.filter(d => !d.entregue).length;
+        try {
+          new (window as any).Notification(`📋 ${c.nome}`, {
+            body: `${pendentes} documento${pendentes > 1 ? 's' : ''} pendente${pendentes > 1 ? 's' : ''} — ${c.empreendimento || c.perfil}`,
+            icon: '/favicon.ico',
+          });
+        } catch { /* silencioso */ }
+      });
+    }
+    // Dispara na hora que ativar + a cada 2 dias
+    dispararLembretes();
+    const intervalo = setInterval(dispararLembretes, 2 * 24 * 60 * 60 * 1000);
+    return () => clearInterval(intervalo);
+  }, [notifAtiva, clientes]);
+
+  async function toggleNotificacoes() {
+    if (Platform.OS !== 'web' || !('Notification' in window)) {
+      alert('Notificações não disponíveis neste dispositivo.');
+      return;
+    }
+    if (notifAtiva) {
+      setNotifAtiva(false);
+      return;
+    }
+    const perm = await (window as any).Notification.requestPermission();
+    setNotifPermissao(perm);
+    if (perm === 'granted') {
+      setNotifAtiva(true);
+      new (window as any).Notification('✅ Certus', { body: 'Lembretes de documentação ativados!' });
+    } else {
+      alert('Permissão negada. Habilite notificações nas configurações do navegador.');
+    }
+  }
 
   async function alterarSenha() {
     if (novaSenha.length < 6) { setErroSenha('Mínimo 6 caracteres.'); return; }
@@ -981,7 +1047,30 @@ function TelaConfiguracoes({ user, userRole, userNome }: { user: User; userRole:
     } catch { setErroSenha('Erro ao alterar. Faça login novamente.'); }
   }
 
+  async function salvarGestor() {
+    setSalvandoGestor(true); setErroGestor(''); setSucessoGestor(false);
+    try {
+      const gestorId = novoGestorCodigo.trim() || null;
+      if (userDocId) {
+        await updateDoc(doc(db, 'usuarios', userDocId), { gestorId });
+      }
+      setSucessoGestor(true);
+      setTimeout(() => { setModalGestor(false); setSucessoGestor(false); }, 1500);
+    } catch { setErroGestor('Erro ao salvar. Tente novamente.'); }
+    finally { setSalvandoGestor(false); }
+  }
+
+  function copiarCodigo() {
+    if (Platform.OS === 'web') {
+      navigator.clipboard.writeText(user.uid).then(() => {
+        setCopiado(true);
+        setTimeout(() => setCopiado(false), 2000);
+      });
+    }
+  }
+
   const iniciais = userNome ? getIniciais(userNome) : (user.email?.slice(0, 2).toUpperCase() || 'JM');
+  const pendentesTotal = clientes.filter(c => c.docs.some(d => !d.entregue)).length;
 
   return (
     <ScrollView style={{ flex: 1, paddingHorizontal: 16, paddingTop: 12 }} contentContainerStyle={{ paddingBottom: 40 }}>
@@ -1007,29 +1096,69 @@ function TelaConfiguracoes({ user, userRole, userNome }: { user: User; userRole:
         </TouchableOpacity>
       </View>
 
-      {userRole === 'gestor' && (
-        <>
-          <Text style={s.secaoLabel}>EQUIPE</Text>
-          <View style={s.secaoCard}>
-            <View style={s.configRow}>
-              <Text style={s.configRowIcon}>🔑</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={s.configRowLabel}>Seu código de gestor</Text>
-                <Text style={{ fontSize: 11, color: C.cinza, marginTop: 2 }}>Compartilhe com seus corretores ao criar a conta deles</Text>
-                <Text style={{ fontSize: 11, color: C.dourado, fontWeight: '700', marginTop: 6 }}>{user.uid}</Text>
-              </View>
+      {/* EQUIPE — aparece para AMBOS os roles */}
+      <Text style={s.secaoLabel}>EQUIPE</Text>
+      <View style={s.secaoCard}>
+        {userRole === 'gestor' ? (
+          /* Gestor: mostra seu código com botão copiar */
+          <View style={s.configRow}>
+            <Text style={s.configRowIcon}>🔑</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={s.configRowLabel}>Seu código de gestor</Text>
+              <Text style={{ fontSize: 11, color: C.cinza, marginTop: 2 }}>
+                Compartilhe com seus corretores ao criar a conta deles
+              </Text>
+              <Text
+                style={{ fontSize: 11, color: C.dourado, fontWeight: '700', marginTop: 6, fontFamily: 'monospace' }}
+                numberOfLines={1}
+                ellipsizeMode="middle"
+              >
+                {user.uid}
+              </Text>
             </View>
+            <TouchableOpacity
+              onPress={copiarCodigo}
+              style={{ backgroundColor: copiado ? C.verdeClaro : C.cinzaClaro, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginLeft: 8 }}
+            >
+              <Text style={{ fontSize: 12, color: copiado ? C.verdeMedio : C.textoSub, fontWeight: '600' }}>
+                {copiado ? '✓ Copiado' : '📋 Copiar'}
+              </Text>
+            </TouchableOpacity>
           </View>
-        </>
-      )}
+        ) : (
+          /* Corretor: botão para vincular/alterar gestor */
+          <TouchableOpacity style={s.configRow} onPress={() => { setNovoGestorCodigo(userGestorId || ''); setModalGestor(true); }}>
+            <Text style={s.configRowIcon}>🏢</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={s.configRowLabel}>Vincular ao gestor</Text>
+              <Text style={{ fontSize: 11, color: C.cinza, marginTop: 2 }}>
+                {userGestorId ? '✓ Gestor vinculado' : 'Nenhum gestor vinculado ainda'}
+              </Text>
+            </View>
+            <Text style={s.configRowSeta}>›</Text>
+          </TouchableOpacity>
+        )}
+      </View>
 
       <Text style={s.secaoLabel}>NOTIFICAÇÕES</Text>
       <View style={s.secaoCard}>
         <View style={s.configRow}>
           <Text style={s.configRowIcon}>🔔</Text>
-          <Text style={[s.configRowLabel, { flex: 1 }]}>Notificações push</Text>
-          <TouchableOpacity style={[s.toggle, notif ? s.toggleOn : s.toggleOff]} onPress={() => setNotif(!notif)}>
-            <View style={[s.toggleDot, { left: notif ? 22 : 2 }]} />
+          <View style={{ flex: 1 }}>
+            <Text style={s.configRowLabel}>Lembretes de documentação</Text>
+            <Text style={{ fontSize: 11, color: C.cinza, marginTop: 2 }}>
+              {notifAtiva
+                ? `Ativo · ${pendentesTotal} cliente${pendentesTotal !== 1 ? 's' : ''} com pendências · lembrete a cada 2 dias`
+                : notifPermissao === 'denied'
+                  ? 'Bloqueado — habilite nas configurações do navegador'
+                  : 'Lembrete a cada 2 dias sobre docs pendentes dos seus clientes'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={[s.toggle, notifAtiva ? s.toggleOn : s.toggleOff]}
+            onPress={toggleNotificacoes}
+          >
+            <View style={[s.toggleDot, { left: notifAtiva ? 22 : 2 }]} />
           </TouchableOpacity>
         </View>
       </View>
@@ -1059,6 +1188,7 @@ function TelaConfiguracoes({ user, userRole, userNome }: { user: User; userRole:
         <Text style={s.btnLogoutTexto}>Sair da conta</Text>
       </TouchableOpacity>
 
+      {/* Modal Alterar Senha */}
       <Modal visible={modalSenha} animationType="slide" transparent>
         <View style={s.modalFundo}>
           <View style={s.modalBox}>
@@ -1073,6 +1203,38 @@ function TelaConfiguracoes({ user, userRole, userNome }: { user: User; userRole:
               </TouchableOpacity>
               <TouchableOpacity style={s.btnSalvar} onPress={alterarSenha}>
                 <Text style={s.btnSalvarTexto}>Salvar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Vincular Gestor (corretor) */}
+      <Modal visible={modalGestor} animationType="slide" transparent>
+        <View style={s.modalFundo}>
+          <View style={s.modalBox}>
+            <View style={s.modalAlca} />
+            <Text style={s.modalTitulo}>Vincular ao gestor</Text>
+            <Text style={{ color: C.textoSub, fontSize: 13, marginTop: 6 }}>
+              Cole o código que o seu gestor compartilhou. Deixe em branco para desvincular.
+            </Text>
+            <Text style={s.label}>Código do gestor</Text>
+            <TextInput
+              style={s.input}
+              placeholder="Cole o UID aqui"
+              value={novoGestorCodigo}
+              onChangeText={setNovoGestorCodigo}
+              autoCapitalize="none"
+              placeholderTextColor={C.cinza}
+            />
+            {erroGestor ? <Text style={{ color: C.erro, fontSize: 13, marginTop: 8 }}>{erroGestor}</Text> : null}
+            {sucessoGestor ? <Text style={{ color: C.verdeMedio, fontSize: 13, marginTop: 8 }}>✓ Gestor vinculado!</Text> : null}
+            <View style={s.modalBotoes}>
+              <TouchableOpacity style={s.btnCancelar} onPress={() => { setModalGestor(false); setErroGestor(''); }}>
+                <Text style={s.btnCancelarTexto}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[s.btnSalvar, salvandoGestor && { opacity: 0.6 }]} onPress={salvarGestor} disabled={salvandoGestor}>
+                <Text style={s.btnSalvarTexto}>{salvandoGestor ? 'Salvando...' : 'Salvar'}</Text>
               </TouchableOpacity>
             </View>
           </View>
