@@ -17,7 +17,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Linking,
   Modal,
@@ -36,7 +36,6 @@ const C = {
   verde: '#1A3C34',
   dourado: '#C9A84C',
   bege: '#F5F0E8',
-  begeCard: '#FFFFFF',
   verdeMedio: '#1D9E75',
   verdeClaro: '#E8F5F0',
   cinza: '#888780',
@@ -47,12 +46,15 @@ const C = {
   erro: '#993C1D',
   erroClaro: '#FAECE7',
   wa: '#25D366',
+  laranja: '#E65100',
+  laranjaClaro: '#FFF3E0',
 };
 
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
 type Perfil = 'CLT' | 'Autônomo' | 'Func. Público';
 type Aba = 'clientes' | 'dashboard' | 'configuracoes';
 type Role = 'corretor' | 'gestor';
+type StatusCliente = 'Em atendimento' | 'Em análise' | 'Aguardando banco' | 'Aprovado' | 'Reprovado';
 
 interface Documento {
   id: number;
@@ -60,20 +62,27 @@ interface Documento {
   sub: string;
   entregue: boolean;
   observacao: string;
+  arquivoBase64?: string;
+  arquivoNome?: string;
+  arquivoTipo?: string;
 }
 
 interface Cliente {
   id: string;
   nome: string;
   telefone: string;
+  email?: string;
   perfil: Perfil;
   renda: number;
   faixa: string;
   empreendimento: string;
+  status: StatusCliente;
   docs: Documento[];
   corretorId: string;
   corretorEmail?: string;
+  corretorNome?: string;
   gestorId?: string;
+  ultimaAtualizacao?: number;
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -169,6 +178,23 @@ function getIniciais(nome: string): string {
   return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
 }
 
+function diasSemAtualizar(ts?: number): number {
+  if (!ts) return 0;
+  return Math.floor((Date.now() - ts) / (1000 * 60 * 60 * 24));
+}
+
+function formatarRenda(renda: number): string {
+  return renda.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0 });
+}
+
+const STATUS_CORES: Record<StatusCliente, { bg: string; text: string }> = {
+  'Em atendimento': { bg: '#EEF2FF', text: '#3730A3' },
+  'Em análise':     { bg: '#FFF7ED', text: '#C2410C' },
+  'Aguardando banco': { bg: '#FFFBEB', text: '#B45309' },
+  'Aprovado':       { bg: C.verdeClaro, text: C.verdeMedio },
+  'Reprovado':      { bg: C.erroClaro, text: C.erro },
+};
+
 // ─── EMAILJS ──────────────────────────────────────────────────────────────────
 const EMAILJS_SERVICE_ID = 'service_5kcdmca';
 const EMAILJS_TEMPLATE_ID = 'template_loetntf';
@@ -203,6 +229,8 @@ export default function HomeScreen() {
 function LoginScreen() {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
+  const [nome, setNome] = useState('');
+  const [sobrenome, setSobrenome] = useState('');
   const [modoCadastro, setModoCadastro] = useState(false);
   const [role, setRole] = useState<Role>('corretor');
   const [gestorCodigo, setGestorCodigo] = useState('');
@@ -220,6 +248,7 @@ function LoginScreen() {
 
   async function entrar() {
     if (!email.trim() || !senha.trim()) { setErro('Preencha e-mail e senha.'); return; }
+    if (modoCadastro && !nome.trim()) { setErro('Digite seu nome.'); return; }
     setErro(''); setCarregando(true);
     try {
       if (modoCadastro) {
@@ -228,6 +257,9 @@ function LoginScreen() {
         await addDoc(collection(db, 'usuarios'), {
           uid: cred.user.uid,
           email: email.trim(),
+          nome: nome.trim(),
+          sobrenome: sobrenome.trim(),
+          nomeCompleto: `${nome.trim()} ${sobrenome.trim()}`.trim(),
           role,
           gestorId,
         });
@@ -240,7 +272,7 @@ function LoginScreen() {
   }
 
   return (
-    <View style={s.loginBg}>
+    <ScrollView style={s.loginBg} contentContainerStyle={{ paddingBottom: 40 }}>
       <View style={s.loginTopo}>
         <View style={s.loginLogoBox}>
           <Text style={s.loginLogoCheck}>✓</Text>
@@ -265,6 +297,13 @@ function LoginScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+
+            <Text style={s.label}>Nome</Text>
+            <TextInput style={s.input} placeholder="Ex.: João" value={nome} onChangeText={setNome} placeholderTextColor={C.cinza} />
+
+            <Text style={s.label}>Sobrenome</Text>
+            <TextInput style={s.input} placeholder="Ex.: Monteiro" value={sobrenome} onChangeText={setSobrenome} placeholderTextColor={C.cinza} />
+
             {role === 'corretor' && (
               <>
                 <Text style={s.label}>Código do gestor (opcional)</Text>
@@ -309,7 +348,7 @@ function LoginScreen() {
       </View>
 
       <Text style={s.loginRodape}>Certus © 2026</Text>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -323,16 +362,21 @@ function AppPrincipal({ user }: { user: User }) {
   const [carregando, setCarregando] = useState(true);
   const [userRole, setUserRole] = useState<Role>('corretor');
   const [userGestorId, setUserGestorId] = useState<string | null>(null);
+  const [userNomeCompleto, setUserNomeCompleto] = useState('');
+  const [busca, setBusca] = useState('');
+  const [filtroFaixa, setFiltroFaixa] = useState<string>('Todas');
+  const [filtroStatus, setFiltroStatus] = useState<string>('Todos');
   const [novoNome, setNovoNome] = useState('');
   const [novoTelefone, setNovoTelefone] = useState('');
+  const [novoEmailCliente, setNovoEmailCliente] = useState('');
   const [novoPerfil, setNovoPerfil] = useState<Perfil>('CLT');
   const [novaRenda, setNovaRenda] = useState('');
   const [novoEmpreendimento, setNovoEmpreendimento] = useState('');
   const [modalExcluirCliente, setModalExcluirCliente] = useState<Cliente | null>(null);
+  const [modalPerfilCliente, setModalPerfilCliente] = useState<Cliente | null>(null);
 
   const faixaPreview = novaRenda ? calcularFaixa(parseFloat(novaRenda.replace(',', '.'))) : null;
 
-  // Busca o perfil do usuário (role e gestorId)
   useEffect(() => {
     const q = query(collection(db, 'usuarios'), where('uid', '==', user.uid));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -340,12 +384,12 @@ function AppPrincipal({ user }: { user: User }) {
         const data = snapshot.docs[0].data();
         setUserRole(data.role || 'corretor');
         setUserGestorId(data.gestorId || null);
+        setUserNomeCompleto(data.nomeCompleto || data.nome || '');
       }
     });
     return unsubscribe;
   }, [user.uid]);
 
-  // Busca clientes: corretor vê só os seus; gestor vê os dos corretores vinculados a ele
   useEffect(() => {
     let q;
     if (userRole === 'gestor') {
@@ -367,17 +411,25 @@ function AppPrincipal({ user }: { user: User }) {
     if (isNaN(renda) || renda <= 0) return;
     try {
       await addDoc(collection(db, 'clientes'), {
-        nome: novoNome.trim(), telefone: novoTelefone.trim(),
-        perfil: novoPerfil, renda, faixa: calcularFaixa(renda),
+        nome: novoNome.trim(),
+        telefone: novoTelefone.trim(),
+        email: novoEmailCliente.trim(),
+        perfil: novoPerfil,
+        renda,
+        faixa: calcularFaixa(renda),
         empreendimento: novoEmpreendimento.trim(),
+        status: 'Em atendimento' as StatusCliente,
         docs: inicializarDocs(novoPerfil),
         corretorId: user.uid,
         corretorEmail: user.email,
+        corretorNome: userNomeCompleto || user.email,
         gestorId: userGestorId || null,
+        ultimaAtualizacao: Date.now(),
       });
     } catch { alert('Erro ao salvar cliente.'); }
-    setNovoNome(''); setNovoTelefone(''); setNovoPerfil('CLT');
-    setNovaRenda(''); setNovoEmpreendimento(''); setModalAberto(false);
+    setNovoNome(''); setNovoTelefone(''); setNovoEmailCliente('');
+    setNovoPerfil('CLT'); setNovaRenda(''); setNovoEmpreendimento('');
+    setModalAberto(false);
   }
 
   async function excluirCliente(cliente: Cliente) {
@@ -388,8 +440,20 @@ function AppPrincipal({ user }: { user: User }) {
   async function atualizarCliente(clienteAtualizado: Cliente) {
     const { id, ...dados } = clienteAtualizado;
     setClienteSelecionado(clienteAtualizado);
-    try { await updateDoc(doc(db, 'clientes', id), dados); } catch { alert('Erro ao salvar.'); }
+    try {
+      await updateDoc(doc(db, 'clientes', id), { ...dados, ultimaAtualizacao: Date.now() });
+    } catch { alert('Erro ao salvar.'); }
   }
+
+  // Filtros
+  const clientesFiltrados = clientes.filter(c => {
+    const buscaOk = busca.trim() === '' ||
+      c.nome.toLowerCase().includes(busca.toLowerCase()) ||
+      (c.empreendimento || '').toLowerCase().includes(busca.toLowerCase());
+    const faixaOk = filtroFaixa === 'Todas' || c.faixa === filtroFaixa;
+    const statusOk = filtroStatus === 'Todos' || c.status === filtroStatus;
+    return buscaOk && faixaOk && statusOk;
+  });
 
   if (carregando) {
     return (
@@ -407,6 +471,7 @@ function AppPrincipal({ user }: { user: User }) {
         onAtualizar={atualizarCliente}
         onExcluir={(c) => { excluirCliente(c); setTela('lista'); }}
         userEmail={user.email}
+        onVerPerfil={(c) => setModalPerfilCliente(c)}
       />
     );
   }
@@ -438,9 +503,7 @@ function AppPrincipal({ user }: { user: User }) {
           <View style={s.headerStats}>
             <View style={s.headerStatItem}>
               <Text style={s.headerStatNum}>{clientes.length}</Text>
-              <Text style={s.headerStatLabel}>
-                {userRole === 'gestor' ? 'Clientes da equipe' : 'Clientes ativos'}
-              </Text>
+              <Text style={s.headerStatLabel}>{userRole === 'gestor' ? 'Clientes da equipe' : 'Clientes ativos'}</Text>
             </View>
             <View style={s.headerDivider} />
             <View style={s.headerStatItem}>
@@ -455,17 +518,25 @@ function AppPrincipal({ user }: { user: User }) {
       <View style={{ flex: 1 }}>
         {abaAtiva === 'clientes' && (
           <TelaClientes
-            clientes={clientes}
+            clientes={clientesFiltrados}
+            todosClientes={clientes}
             userRole={userRole}
+            busca={busca}
+            setBusca={setBusca}
+            filtroFaixa={filtroFaixa}
+            setFiltroFaixa={setFiltroFaixa}
+            filtroStatus={filtroStatus}
+            setFiltroStatus={setFiltroStatus}
             onAbrirCliente={(c) => { setClienteSelecionado(c); setTela('checklist'); }}
             onExcluirCliente={setModalExcluirCliente}
+            onVerPerfil={setModalPerfilCliente}
           />
         )}
         {abaAtiva === 'dashboard' && <TelaDashboard clientes={clientes} />}
-        {abaAtiva === 'configuracoes' && <TelaConfiguracoes user={user} userRole={userRole} />}
+        {abaAtiva === 'configuracoes' && <TelaConfiguracoes user={user} userRole={userRole} userNome={userNomeCompleto} />}
       </View>
 
-      {/* FAB — gestor não adiciona clientes */}
+      {/* FAB */}
       {abaAtiva === 'clientes' && userRole === 'corretor' && (
         <TouchableOpacity style={s.fab} onPress={() => setModalAberto(true)}>
           <Text style={s.fabIcon}>+</Text>
@@ -490,46 +561,50 @@ function AppPrincipal({ user }: { user: User }) {
       {/* Modal Novo Cliente */}
       <Modal visible={modalAberto} animationType="slide" transparent>
         <View style={s.modalFundo}>
-          <View style={s.modalBox}>
-            <View style={s.modalAlca} />
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <Text style={s.modalTitulo}>Novo Cliente</Text>
-              <TouchableOpacity onPress={() => setModalAberto(false)} style={s.modalFechar}>
-                <Text style={{ color: C.cinza, fontSize: 16 }}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={s.label}>Nome completo</Text>
-            <TextInput style={s.input} placeholder="Ex.: Ana Paula Ribeiro" value={novoNome} onChangeText={setNovoNome} placeholderTextColor={C.cinza} />
-            <Text style={s.label}>Telefone (WhatsApp)</Text>
-            <TextInput style={s.input} placeholder="(81) 99999-9999" value={novoTelefone} onChangeText={setNovoTelefone} keyboardType="phone-pad" placeholderTextColor={C.cinza} />
-            <Text style={s.label}>Empreendimento</Text>
-            <TextInput style={s.input} placeholder="Ex.: Mirante Belvedere" value={novoEmpreendimento} onChangeText={setNovoEmpreendimento} placeholderTextColor={C.cinza} />
-            <Text style={s.label}>Perfil profissional</Text>
-            <View style={s.opcoes}>
-              {(['CLT', 'Autônomo', 'Func. Público'] as Perfil[]).map(p => (
-                <TouchableOpacity key={p} style={[s.opcao, novoPerfil === p && s.opcaoAtiva]} onPress={() => setNovoPerfil(p)}>
-                  <Text style={[s.opcaoTexto, novoPerfil === p && s.opcaoTextoAtivo]}>{p}</Text>
+          <ScrollView>
+            <View style={[s.modalBox, { marginTop: 60 }]}>
+              <View style={s.modalAlca} />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <Text style={s.modalTitulo}>Novo Cliente</Text>
+                <TouchableOpacity onPress={() => setModalAberto(false)} style={s.modalFechar}>
+                  <Text style={{ color: C.cinza, fontSize: 16 }}>✕</Text>
                 </TouchableOpacity>
-              ))}
-            </View>
-            <Text style={s.label}>Renda familiar (R$)</Text>
-            <TextInput style={s.input} placeholder="Ex.: 3200" value={novaRenda} onChangeText={setNovaRenda} keyboardType="numeric" placeholderTextColor={C.cinza} />
-            {faixaPreview && (
-              <View style={[s.faixaBox, faixaPreview === 'Fora do MCMV' ? s.faixaBoxErro : s.faixaBoxOk]}>
-                <Text style={[s.faixaTexto, faixaPreview === 'Fora do MCMV' ? { color: C.erro } : { color: C.verdeMedio }]}>
-                  {faixaPreview === 'Fora do MCMV' ? 'Renda acima do limite do MCMV' : `Faixa ${faixaPreview} — cliente elegível ao MCMV`}
-                </Text>
               </View>
-            )}
-            <View style={s.modalBotoes}>
-              <TouchableOpacity style={s.btnCancelar} onPress={() => setModalAberto(false)}>
-                <Text style={s.btnCancelarTexto}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={s.btnSalvar} onPress={adicionarCliente}>
-                <Text style={s.btnSalvarTexto}>Salvar</Text>
-              </TouchableOpacity>
+              <Text style={s.label}>Nome completo</Text>
+              <TextInput style={s.input} placeholder="Ex.: Ana Paula Ribeiro" value={novoNome} onChangeText={setNovoNome} placeholderTextColor={C.cinza} />
+              <Text style={s.label}>Telefone (WhatsApp)</Text>
+              <TextInput style={s.input} placeholder="(81) 99999-9999" value={novoTelefone} onChangeText={setNovoTelefone} keyboardType="phone-pad" placeholderTextColor={C.cinza} />
+              <Text style={s.label}>E-mail do cliente</Text>
+              <TextInput style={s.input} placeholder="cliente@email.com" value={novoEmailCliente} onChangeText={setNovoEmailCliente} keyboardType="email-address" autoCapitalize="none" placeholderTextColor={C.cinza} />
+              <Text style={s.label}>Empreendimento</Text>
+              <TextInput style={s.input} placeholder="Ex.: Mirante Belvedere" value={novoEmpreendimento} onChangeText={setNovoEmpreendimento} placeholderTextColor={C.cinza} />
+              <Text style={s.label}>Perfil profissional</Text>
+              <View style={s.opcoes}>
+                {(['CLT', 'Autônomo', 'Func. Público'] as Perfil[]).map(p => (
+                  <TouchableOpacity key={p} style={[s.opcao, novoPerfil === p && s.opcaoAtiva]} onPress={() => setNovoPerfil(p)}>
+                    <Text style={[s.opcaoTexto, novoPerfil === p && s.opcaoTextoAtivo]}>{p}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={s.label}>Renda familiar (R$)</Text>
+              <TextInput style={s.input} placeholder="Ex.: 3200" value={novaRenda} onChangeText={setNovaRenda} keyboardType="numeric" placeholderTextColor={C.cinza} />
+              {faixaPreview && (
+                <View style={[s.faixaBox, faixaPreview === 'Fora do MCMV' ? s.faixaBoxErro : s.faixaBoxOk]}>
+                  <Text style={[s.faixaTexto, faixaPreview === 'Fora do MCMV' ? { color: C.erro } : { color: C.verdeMedio }]}>
+                    {faixaPreview === 'Fora do MCMV' ? 'Renda acima do limite do MCMV' : `Faixa ${faixaPreview} — cliente elegível ao MCMV`}
+                  </Text>
+                </View>
+              )}
+              <View style={s.modalBotoes}>
+                <TouchableOpacity style={s.btnCancelar} onPress={() => setModalAberto(false)}>
+                  <Text style={s.btnCancelarTexto}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={s.btnSalvar} onPress={adicionarCliente}>
+                  <Text style={s.btnSalvarTexto}>Salvar</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
 
@@ -552,67 +627,241 @@ function AppPrincipal({ user }: { user: User }) {
           </View>
         </View>
       </Modal>
+
+      {/* Modal Perfil do Cliente */}
+      <Modal visible={modalPerfilCliente !== null} animationType="slide" transparent>
+        <View style={s.modalFundo}>
+          <View style={s.modalBox}>
+            <View style={s.modalAlca} />
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <Text style={s.modalTitulo}>Dados do Cliente</Text>
+              <TouchableOpacity onPress={() => setModalPerfilCliente(null)} style={s.modalFechar}>
+                <Text style={{ color: C.cinza, fontSize: 16 }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {modalPerfilCliente && (
+              <>
+                <View style={{ alignItems: 'center', marginBottom: 20 }}>
+                  <View style={[s.avatar, { width: 64, height: 64, borderRadius: 32 }]}>
+                    <Text style={[s.avatarTexto, { fontSize: 22 }]}>{getIniciais(modalPerfilCliente.nome)}</Text>
+                  </View>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: C.texto, marginTop: 10 }}>{modalPerfilCliente.nome}</Text>
+                  {modalPerfilCliente.status && (
+                    <View style={[s.statusBadge, { backgroundColor: STATUS_CORES[modalPerfilCliente.status]?.bg || C.cinzaClaro, marginTop: 6 }]}>
+                      <Text style={[s.statusTexto, { color: STATUS_CORES[modalPerfilCliente.status]?.text || C.cinza }]}>{modalPerfilCliente.status}</Text>
+                    </View>
+                  )}
+                </View>
+
+                <View style={s.perfilLinha}>
+                  <Text style={s.perfilIcone}>📱</Text>
+                  <View>
+                    <Text style={s.perfilLabel}>Telefone</Text>
+                    <TouchableOpacity onPress={() => Linking.openURL(`https://wa.me/${formatarTelefoneWA(modalPerfilCliente.telefone)}`)}>
+                      <Text style={[s.perfilValor, { color: C.wa }]}>{modalPerfilCliente.telefone || '—'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {modalPerfilCliente.email ? (
+                  <View style={s.perfilLinha}>
+                    <Text style={s.perfilIcone}>✉️</Text>
+                    <View>
+                      <Text style={s.perfilLabel}>E-mail</Text>
+                      <Text style={s.perfilValor}>{modalPerfilCliente.email}</Text>
+                    </View>
+                  </View>
+                ) : null}
+
+                <View style={s.perfilLinha}>
+                  <Text style={s.perfilIcone}>💼</Text>
+                  <View>
+                    <Text style={s.perfilLabel}>Perfil profissional</Text>
+                    <Text style={s.perfilValor}>{modalPerfilCliente.perfil}</Text>
+                  </View>
+                </View>
+
+                <View style={s.perfilLinha}>
+                  <Text style={s.perfilIcone}>💰</Text>
+                  <View>
+                    <Text style={s.perfilLabel}>Renda familiar</Text>
+                    <Text style={s.perfilValor}>{formatarRenda(modalPerfilCliente.renda)} · {getLabelFaixa(modalPerfilCliente.faixa)}</Text>
+                  </View>
+                </View>
+
+                {modalPerfilCliente.empreendimento ? (
+                  <View style={s.perfilLinha}>
+                    <Text style={s.perfilIcone}>🏠</Text>
+                    <View>
+                      <Text style={s.perfilLabel}>Empreendimento</Text>
+                      <Text style={s.perfilValor}>{modalPerfilCliente.empreendimento}</Text>
+                    </View>
+                  </View>
+                ) : null}
+
+                {modalPerfilCliente.corretorNome ? (
+                  <View style={s.perfilLinha}>
+                    <Text style={s.perfilIcone}>👤</Text>
+                    <View>
+                      <Text style={s.perfilLabel}>Corretor responsável</Text>
+                      <Text style={s.perfilValor}>{modalPerfilCliente.corretorNome}</Text>
+                    </View>
+                  </View>
+                ) : null}
+
+                <TouchableOpacity
+                  style={[s.btnWA, { marginTop: 16 }]}
+                  onPress={() => {
+                    setModalPerfilCliente(null);
+                    if (clienteSelecionado?.id !== modalPerfilCliente.id) {
+                      setClienteSelecionado(modalPerfilCliente);
+                      setTela('checklist');
+                    }
+                  }}
+                >
+                  <Text style={s.btnWATexto}>📋 Ver checklist</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 // ─── ABA CLIENTES ─────────────────────────────────────────────────────────────
-function TelaClientes({ clientes, userRole, onAbrirCliente, onExcluirCliente }: {
+function TelaClientes({
+  clientes, todosClientes, userRole, busca, setBusca,
+  filtroFaixa, setFiltroFaixa, filtroStatus, setFiltroStatus,
+  onAbrirCliente, onExcluirCliente, onVerPerfil,
+}: {
   clientes: Cliente[];
+  todosClientes: Cliente[];
   userRole: Role;
+  busca: string;
+  setBusca: (v: string) => void;
+  filtroFaixa: string;
+  setFiltroFaixa: (v: string) => void;
+  filtroStatus: string;
+  setFiltroStatus: (v: string) => void;
   onAbrirCliente: (c: Cliente) => void;
   onExcluirCliente: (c: Cliente) => void;
+  onVerPerfil: (c: Cliente) => void;
 }) {
+  const faixas = ['Todas', '1', '2', '3', '4', 'Fora do MCMV'];
+  const statusList: string[] = ['Todos', 'Em atendimento', 'Em análise', 'Aguardando banco', 'Aprovado', 'Reprovado'];
+
   return (
-    <ScrollView style={{ flex: 1, paddingHorizontal: 16, paddingTop: 12 }} contentContainerStyle={{ paddingBottom: 100 }}>
-      {clientes.length === 0 && (
-        <View style={{ alignItems: 'center', marginTop: 60 }}>
-          <Text style={{ fontSize: 32, marginBottom: 12 }}>📋</Text>
-          <Text style={{ color: C.cinza, fontSize: 14, textAlign: 'center' }}>
-            {userRole === 'gestor'
-              ? 'Nenhum cliente da equipe ainda.\nCorretores precisam informar seu código ao criar conta.'
-              : 'Nenhum cliente ainda.\nToque no + para adicionar.'}
-          </Text>
-        </View>
-      )}
-      {clientes.map(c => {
-        const entregues = c.docs.filter(d => d.entregue).length;
-        const total = c.docs.length;
-        const pct = total > 0 ? Math.round((entregues / total) * 100) : 0;
-        const pendentes = total - entregues;
-        const fora = c.faixa === 'Fora do MCMV';
-        return (
-          <View key={c.id} style={s.cardWrapper}>
-            <TouchableOpacity style={s.card} onPress={() => onAbrirCliente(c)} activeOpacity={0.7}>
-              <View style={s.avatar}>
-                <Text style={s.avatarTexto}>{getIniciais(c.nome)}</Text>
-              </View>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={s.cardNome}>{c.nome}</Text>
-                <Text style={s.cardSub}>{c.perfil} · {getLabelFaixa(c.faixa)} · {pendentes} pendentes</Text>
-                {c.empreendimento ? <Text style={s.cardEmpre}>{c.empreendimento}</Text> : null}
-                {userRole === 'gestor' && c.corretorEmail ? (
-                  <Text style={[s.cardEmpre, { color: C.dourado, fontWeight: '500' }]}>
-                    👤 {c.corretorEmail}
-                  </Text>
-                ) : null}
-                <View style={s.miniBarFundo}>
-                  <View style={[s.miniBarFill, { width: `${pct}%` as any, backgroundColor: pct === 100 ? C.verdeMedio : C.dourado }]} />
-                </View>
-              </View>
-              <Text style={[s.cardPct, pct === 100 && { color: C.verdeMedio }, fora && { color: C.erro }]}>
-                {fora ? '—' : `${pct}%`}
+    <View style={{ flex: 1 }}>
+      {/* Barra de busca */}
+      <View style={{ paddingHorizontal: 16, paddingTop: 12, gap: 8 }}>
+        <TextInput
+          style={s.inputBusca}
+          placeholder="🔍  Buscar por nome ou empreendimento..."
+          value={busca}
+          onChangeText={setBusca}
+          placeholderTextColor={C.cinza}
+        />
+
+        {/* Filtro faixa */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 2 }}>
+          {faixas.map(f => (
+            <TouchableOpacity
+              key={f}
+              style={[s.chipFiltro, filtroFaixa === f && s.chipFiltroAtivo]}
+              onPress={() => setFiltroFaixa(f)}
+            >
+              <Text style={[s.chipFiltroTexto, filtroFaixa === f && s.chipFiltroTextoAtivo]}>
+                {f === 'Todas' ? 'Todas as faixas' : f === 'Fora do MCMV' ? 'Fora' : `Faixa ${f}`}
               </Text>
             </TouchableOpacity>
-            {userRole === 'corretor' && (
-              <TouchableOpacity style={s.btnLixeira} onPress={() => onExcluirCliente(c)}>
-                <Text style={{ fontSize: 15, color: C.cinza }}>🗑</Text>
-              </TouchableOpacity>
-            )}
+          ))}
+        </ScrollView>
+
+        {/* Filtro status */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          {statusList.map(st => (
+            <TouchableOpacity
+              key={st}
+              style={[s.chipFiltro, filtroStatus === st && s.chipFiltroAtivo]}
+              onPress={() => setFiltroStatus(st)}
+            >
+              <Text style={[s.chipFiltroTexto, filtroStatus === st && s.chipFiltroTextoAtivo]}>{st}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+
+      <ScrollView style={{ flex: 1, paddingHorizontal: 16, paddingTop: 8 }} contentContainerStyle={{ paddingBottom: 100 }}>
+        {clientes.length === 0 && (
+          <View style={{ alignItems: 'center', marginTop: 60 }}>
+            <Text style={{ fontSize: 32, marginBottom: 12 }}>📋</Text>
+            <Text style={{ color: C.cinza, fontSize: 14, textAlign: 'center' }}>
+              {todosClientes.length === 0
+                ? userRole === 'gestor'
+                  ? 'Nenhum cliente da equipe ainda.\nCorretores precisam informar seu código ao criar conta.'
+                  : 'Nenhum cliente ainda.\nToque no + para adicionar.'
+                : 'Nenhum cliente encontrado para este filtro.'}
+            </Text>
           </View>
-        );
-      })}
-    </ScrollView>
+        )}
+        {clientes.map(c => {
+          const entregues = c.docs.filter(d => d.entregue).length;
+          const total = c.docs.length;
+          const pct = total > 0 ? Math.round((entregues / total) * 100) : 0;
+          const pendentes = total - entregues;
+          const fora = c.faixa === 'Fora do MCMV';
+          const dias = diasSemAtualizar(c.ultimaAtualizacao);
+          const parado = dias >= 3 && pct < 100;
+          const corStatus = STATUS_CORES[c.status] || STATUS_CORES['Em atendimento'];
+
+          return (
+            <View key={c.id} style={s.cardWrapper}>
+              <TouchableOpacity style={[s.card, parado && { borderWidth: 1, borderColor: C.laranja }]} onPress={() => onAbrirCliente(c)} activeOpacity={0.7}>
+                <TouchableOpacity onPress={() => onVerPerfil(c)}>
+                  <View style={s.avatar}>
+                    <Text style={s.avatarTexto}>{getIniciais(c.nome)}</Text>
+                  </View>
+                </TouchableOpacity>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <Text style={s.cardNome}>{c.nome}</Text>
+                    {parado && (
+                      <View style={s.badgeParado}>
+                        <Text style={s.badgeParadoTexto}>Parado {dias}d</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={s.cardSub}>{c.perfil} · {getLabelFaixa(c.faixa)} · {pendentes} pendentes</Text>
+                  {c.empreendimento ? <Text style={s.cardEmpre}>{c.empreendimento}</Text> : null}
+                  {userRole === 'gestor' && c.corretorNome ? (
+                    <Text style={[s.cardEmpre, { color: C.dourado, fontWeight: '500' }]}>👤 {c.corretorNome}</Text>
+                  ) : null}
+                  {c.status && (
+                    <View style={[s.statusBadge, { backgroundColor: corStatus.bg, marginTop: 4 }]}>
+                      <Text style={[s.statusTexto, { color: corStatus.text }]}>{c.status}</Text>
+                    </View>
+                  )}
+                  <View style={s.miniBarFundo}>
+                    <View style={[s.miniBarFill, { width: `${pct}%` as any, backgroundColor: pct === 100 ? C.verdeMedio : C.dourado }]} />
+                  </View>
+                </View>
+                <Text style={[s.cardPct, pct === 100 && { color: C.verdeMedio }, fora && { color: C.erro }]}>
+                  {fora ? '—' : `${pct}%`}
+                </Text>
+              </TouchableOpacity>
+              {userRole === 'corretor' && (
+                <TouchableOpacity style={s.btnLixeira} onPress={() => onExcluirCliente(c)}>
+                  <Text style={{ fontSize: 15, color: C.cinza }}>🗑</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          );
+        })}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -649,6 +898,12 @@ function TelaDashboard({ clientes }: { clientes: Cliente[] }) {
     .sort((a, b) => b.pct - a.pct)
     .slice(0, 3);
 
+  const statusDist = (['Em atendimento', 'Em análise', 'Aguardando banco', 'Aprovado', 'Reprovado'] as StatusCliente[]).map(st => ({
+    label: st,
+    count: clientes.filter(c => c.status === st).length,
+    cor: STATUS_CORES[st],
+  }));
+
   return (
     <ScrollView style={{ flex: 1, paddingHorizontal: 16, paddingTop: 12 }} contentContainerStyle={{ paddingBottom: 40 }}>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
@@ -669,6 +924,18 @@ function TelaDashboard({ clientes }: { clientes: Cliente[] }) {
               <View style={{ height: 8, backgroundColor: C.verde, borderRadius: 4, width: `${(f.count / maxCount) * 100}%` as any }} />
             </View>
             <Text style={{ fontSize: 12, fontWeight: '600', color: C.texto, width: 20, textAlign: 'right' }}>{f.count}</Text>
+          </View>
+        ))}
+      </View>
+
+      <View style={[s.secaoCard, { marginTop: 12 }]}>
+        <Text style={s.secaoTitulo}>Status dos clientes</Text>
+        {statusDist.map(st => (
+          <View key={st.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}>
+            <View style={[s.statusBadge, { backgroundColor: st.cor.bg }]}>
+              <Text style={[s.statusTexto, { color: st.cor.text }]}>{st.label}</Text>
+            </View>
+            <Text style={{ fontSize: 13, fontWeight: '600', color: C.texto, marginLeft: 'auto' }}>{st.count}</Text>
           </View>
         ))}
       </View>
@@ -695,7 +962,7 @@ function TelaDashboard({ clientes }: { clientes: Cliente[] }) {
 }
 
 // ─── ABA CONFIGURAÇÕES ────────────────────────────────────────────────────────
-function TelaConfiguracoes({ user, userRole }: { user: User; userRole: Role }) {
+function TelaConfiguracoes({ user, userRole, userNome }: { user: User; userRole: Role; userNome: string }) {
   const [novaSenha, setNovaSenha] = useState('');
   const [modalSenha, setModalSenha] = useState(false);
   const [erroSenha, setErroSenha] = useState('');
@@ -711,7 +978,7 @@ function TelaConfiguracoes({ user, userRole }: { user: User; userRole: Role }) {
     } catch { setErroSenha('Erro ao alterar. Faça login novamente.'); }
   }
 
-  const iniciais = user.email?.slice(0, 2).toUpperCase() || 'JM';
+  const iniciais = userNome ? getIniciais(userNome) : (user.email?.slice(0, 2).toUpperCase() || 'JM');
 
   return (
     <ScrollView style={{ flex: 1, paddingHorizontal: 16, paddingTop: 12 }} contentContainerStyle={{ paddingBottom: 40 }}>
@@ -720,7 +987,8 @@ function TelaConfiguracoes({ user, userRole }: { user: User; userRole: Role }) {
           <Text style={[s.avatarTexto, { fontSize: 18 }]}>{iniciais}</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 15, fontWeight: '600', color: C.texto }}>{user.email}</Text>
+          {userNome ? <Text style={{ fontSize: 15, fontWeight: '700', color: C.texto }}>{userNome}</Text> : null}
+          <Text style={{ fontSize: 13, color: C.cinza }}>{user.email}</Text>
           <View style={s.badgeAtivo}>
             <Text style={s.badgeAtivoTexto}>{userRole === 'gestor' ? 'Gestor' : 'Corretor ativo'}</Text>
           </View>
@@ -744,12 +1012,8 @@ function TelaConfiguracoes({ user, userRole }: { user: User; userRole: Role }) {
               <Text style={s.configRowIcon}>🔑</Text>
               <View style={{ flex: 1 }}>
                 <Text style={s.configRowLabel}>Seu código de gestor</Text>
-                <Text style={{ fontSize: 11, color: C.cinza, marginTop: 2 }}>
-                  Compartilhe com seus corretores ao criar a conta deles
-                </Text>
-                <Text style={{ fontSize: 11, color: C.dourado, fontWeight: '700', marginTop: 6 }}>
-                  {user.uid}
-                </Text>
+                <Text style={{ fontSize: 11, color: C.cinza, marginTop: 2 }}>Compartilhe com seus corretores ao criar a conta deles</Text>
+                <Text style={{ fontSize: 11, color: C.dourado, fontWeight: '700', marginTop: 6 }}>{user.uid}</Text>
               </View>
             </View>
           </View>
@@ -761,10 +1025,7 @@ function TelaConfiguracoes({ user, userRole }: { user: User; userRole: Role }) {
         <View style={s.configRow}>
           <Text style={s.configRowIcon}>🔔</Text>
           <Text style={[s.configRowLabel, { flex: 1 }]}>Notificações push</Text>
-          <TouchableOpacity
-            style={[s.toggle, notif ? s.toggleOn : s.toggleOff]}
-            onPress={() => setNotif(!notif)}
-          >
+          <TouchableOpacity style={[s.toggle, notif ? s.toggleOn : s.toggleOff]} onPress={() => setNotif(!notif)}>
             <View style={[s.toggleDot, { left: notif ? 22 : 2 }]} />
           </TouchableOpacity>
         </View>
@@ -819,21 +1080,24 @@ function TelaConfiguracoes({ user, userRole }: { user: User; userRole: Role }) {
 }
 
 // ─── CHECKLIST ────────────────────────────────────────────────────────────────
-function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }: {
+function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail, onVerPerfil }: {
   cliente: Cliente;
   voltar: () => void;
   onAtualizar: (c: Cliente) => void;
   onExcluir: (c: Cliente) => void;
   userEmail: string | null;
+  onVerPerfil: (c: Cliente) => void;
 }) {
   const [emailModal, setEmailModal] = useState(false);
   const [emailDestino, setEmailDestino] = useState('');
   const [enviandoEmail, setEnviandoEmail] = useState(false);
+  const [statusModal, setStatusModal] = useState(false);
 
   const entregues = cliente.docs.filter(d => d.entregue).length;
   const total = cliente.docs.length;
   const pct = total > 0 ? Math.round((entregues / total) * 100) : 0;
   const waLink = `https://wa.me/${formatarTelefoneWA(cliente.telefone)}`;
+  const corStatus = STATUS_CORES[cliente.status] || STATUS_CORES['Em atendimento'];
 
   async function enviarEmail() {
     if (!emailDestino.trim()) { alert('Digite o e-mail de destino.'); return; }
@@ -875,17 +1139,45 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
     onAtualizar({ ...cliente, docs: novosDocs });
   }
 
+  function salvarAnexo(id: number, base64: string, nome: string, tipo: string) {
+    const novosDocs = cliente.docs.map(d => d.id === id ? { ...d, arquivoBase64: base64, arquivoNome: nome, arquivoTipo: tipo } : d);
+    onAtualizar({ ...cliente, docs: novosDocs });
+  }
+
+  function removerAnexo(id: number) {
+    const novosDocs = cliente.docs.map(d => d.id === id ? { ...d, arquivoBase64: undefined, arquivoNome: undefined, arquivoTipo: undefined } : d);
+    onAtualizar({ ...cliente, docs: novosDocs });
+  }
+
+  function alterarStatus(novoStatus: StatusCliente) {
+    onAtualizar({ ...cliente, status: novoStatus });
+    setStatusModal(false);
+  }
+
   return (
     <View style={s.container}>
       <View style={s.header}>
         <TouchableOpacity onPress={voltar} style={{ marginBottom: 6 }}>
           <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 14 }}>‹ Voltar</Text>
         </TouchableOpacity>
-        <Text style={{ fontSize: 18, fontWeight: '700', color: '#fff', textAlign: 'center' }}>{cliente.nome}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+          <Text style={{ fontSize: 18, fontWeight: '700', color: '#fff', textAlign: 'center' }}>{cliente.nome}</Text>
+          <TouchableOpacity onPress={() => onVerPerfil(cliente)}>
+            <Text style={{ fontSize: 18 }}>ℹ️</Text>
+          </TouchableOpacity>
+        </View>
         <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', textAlign: 'center', marginTop: 2 }}>
           {cliente.perfil} · {getLabelFaixa(cliente.faixa)}{cliente.empreendimento ? ` · ${cliente.empreendimento}` : ''}
         </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 }}>
+
+        {/* Status badge clicável */}
+        <TouchableOpacity onPress={() => setStatusModal(true)} style={{ alignItems: 'center', marginTop: 8 }}>
+          <View style={[s.statusBadge, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
+            <Text style={{ color: C.dourado, fontSize: 12, fontWeight: '600' }}>{cliente.status || 'Em atendimento'} ▾</Text>
+          </View>
+        </TouchableOpacity>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}>
           <View style={{ flex: 1, height: 6, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 3 }}>
             <View style={{ height: 6, borderRadius: 3, backgroundColor: pct === 100 ? C.verdeMedio : C.dourado, width: `${pct}%` as any }} />
           </View>
@@ -898,7 +1190,14 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
 
       <ScrollView style={{ flex: 1, paddingHorizontal: 16, paddingTop: 12 }} contentContainerStyle={{ paddingBottom: 120 }}>
         {cliente.docs.map(doc => (
-          <DocItem key={doc.id} doc={doc} onToggle={toggleDoc} onSalvarObs={salvarObs} />
+          <DocItem
+            key={doc.id}
+            doc={doc}
+            onToggle={toggleDoc}
+            onSalvarObs={salvarObs}
+            onSalvarAnexo={salvarAnexo}
+            onRemoverAnexo={removerAnexo}
+          />
         ))}
 
         <View style={{ marginTop: 16, gap: 10 }}>
@@ -916,6 +1215,7 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
         </View>
       </ScrollView>
 
+      {/* Modal E-mail */}
       <Modal visible={emailModal} animationType="slide" transparent>
         <View style={s.modalFundo}>
           <View style={s.modalBox}>
@@ -938,19 +1238,48 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
           </View>
         </View>
       </Modal>
+
+      {/* Modal Status */}
+      <Modal visible={statusModal} animationType="slide" transparent>
+        <View style={s.modalFundo}>
+          <View style={s.modalBox}>
+            <Text style={s.modalTitulo}>Alterar status</Text>
+            <View style={{ gap: 8, marginTop: 16 }}>
+              {(['Em atendimento', 'Em análise', 'Aguardando banco', 'Aprovado', 'Reprovado'] as StatusCliente[]).map(st => (
+                <TouchableOpacity
+                  key={st}
+                  style={[s.statusOpcao, cliente.status === st && { borderColor: C.verde, borderWidth: 2 }]}
+                  onPress={() => alterarStatus(st)}
+                >
+                  <View style={[s.statusBadge, { backgroundColor: STATUS_CORES[st].bg }]}>
+                    <Text style={[s.statusTexto, { color: STATUS_CORES[st].text }]}>{st}</Text>
+                  </View>
+                  {cliente.status === st && <Text style={{ color: C.verde, fontSize: 14 }}>✓</Text>}
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity style={[s.btnCancelar, { marginTop: 16 }]} onPress={() => setStatusModal(false)}>
+              <Text style={s.btnCancelarTexto}>Fechar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 // ─── DOC ITEM ─────────────────────────────────────────────────────────────────
-function DocItem({ doc, onToggle, onSalvarObs }: {
+function DocItem({ doc, onToggle, onSalvarObs, onSalvarAnexo, onRemoverAnexo }: {
   doc: Documento;
   onToggle: (id: number) => void;
   onSalvarObs: (id: number, obs: string) => void;
+  onSalvarAnexo: (id: number, base64: string, nome: string, tipo: string) => void;
+  onRemoverAnexo: (id: number) => void;
 }) {
   const [expandido, setExpandido] = useState(false);
   const [obs, setObs] = useState(doc.observacao || '');
   const [salvo, setSalvo] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   function handleSalvar() {
     onSalvarObs(doc.id, obs);
@@ -962,6 +1291,38 @@ function DocItem({ doc, onToggle, onSalvarObs }: {
     setObs('');
     onSalvarObs(doc.id, '');
     setSalvo(false);
+  }
+
+  function handleAnexar() {
+    if (Platform.OS === 'web') {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*,application/pdf';
+      input.onchange = async (e: any) => {
+        const file: File = e.target.files[0];
+        if (!file) return;
+        if (file.size > 1.5 * 1024 * 1024) {
+          alert('Arquivo muito grande. Máximo 1.5MB.');
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = (reader.result as string).split(',')[1];
+          onSalvarAnexo(doc.id, base64, file.name, file.type);
+        };
+        reader.readAsDataURL(file);
+      };
+      input.click();
+    }
+  }
+
+  function handleAbrirAnexo() {
+    if (!doc.arquivoBase64 || !doc.arquivoTipo) return;
+    const byteChars = atob(doc.arquivoBase64);
+    const byteNums = new Array(byteChars.length).fill(0).map((_, i) => byteChars.charCodeAt(i));
+    const blob = new Blob([new Uint8Array(byteNums)], { type: doc.arquivoTipo });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
   }
 
   return (
@@ -978,6 +1339,9 @@ function DocItem({ doc, onToggle, onSalvarObs }: {
           {doc.observacao ? (
             <Text style={s.obsPreview} numberOfLines={1}>💬 {doc.observacao}</Text>
           ) : null}
+          {doc.arquivoNome ? (
+            <Text style={s.anexoPreview} numberOfLines={1}>📎 {doc.arquivoNome}</Text>
+          ) : null}
         </View>
         {!doc.entregue && (
           <View style={s.badgePendente}>
@@ -989,6 +1353,7 @@ function DocItem({ doc, onToggle, onSalvarObs }: {
 
       {expandido && (
         <View style={s.obsBox}>
+          {/* Observação */}
           <Text style={s.obsLabel}>Observação</Text>
           <TextInput
             style={s.obsInput}
@@ -1009,6 +1374,25 @@ function DocItem({ doc, onToggle, onSalvarObs }: {
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* Anexo */}
+          <View style={{ height: 1, backgroundColor: C.cinzaBorda, marginVertical: 12 }} />
+          <Text style={s.obsLabel}>Anexo</Text>
+          {doc.arquivoNome ? (
+            <View style={s.anexoCard}>
+              <TouchableOpacity style={{ flex: 1 }} onPress={handleAbrirAnexo}>
+                <Text style={s.anexoNome} numberOfLines={1}>📎 {doc.arquivoNome}</Text>
+                <Text style={{ fontSize: 11, color: C.cinza }}>Toque para abrir</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.anexoRemover} onPress={() => onRemoverAnexo(doc.id)}>
+                <Text style={s.obsExcluirTexto}>🗑</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity style={s.btnAnexar} onPress={handleAnexar}>
+              <Text style={s.btnAnexarTexto}>📎 Anexar arquivo</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
     </View>
@@ -1059,6 +1443,13 @@ const s = StyleSheet.create({
   fab: { position: 'absolute', bottom: Platform.OS === 'ios' ? 90 : 70, right: 20, width: 56, height: 56, borderRadius: 28, backgroundColor: C.verde, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, elevation: 6 },
   fabIcon: { fontSize: 30, color: C.dourado, lineHeight: 34 },
 
+  // BUSCA E FILTROS
+  inputBusca: { backgroundColor: '#fff', borderRadius: 14, padding: 12, fontSize: 14, color: C.texto, borderWidth: 1, borderColor: C.cinzaBorda },
+  chipFiltro: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: '#fff', marginRight: 6, borderWidth: 1, borderColor: C.cinzaBorda },
+  chipFiltroAtivo: { backgroundColor: C.verde, borderColor: C.verde },
+  chipFiltroTexto: { fontSize: 12, color: C.cinza, fontWeight: '500' },
+  chipFiltroTextoAtivo: { color: '#fff', fontWeight: '700' },
+
   // CARDS CLIENTES
   cardWrapper: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   card: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 20, padding: 14, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 },
@@ -1073,6 +1464,21 @@ const s = StyleSheet.create({
   // AVATAR
   avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.verde, alignItems: 'center', justifyContent: 'center' },
   avatarTexto: { color: C.dourado, fontWeight: '700', fontSize: 14 },
+
+  // STATUS
+  statusBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start' },
+  statusTexto: { fontSize: 11, fontWeight: '600' },
+  statusOpcao: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 12, backgroundColor: C.cinzaClaro, borderWidth: 1, borderColor: 'transparent' },
+
+  // BADGE PARADO
+  badgeParado: { backgroundColor: C.laranjaClaro, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  badgeParadoTexto: { fontSize: 10, color: C.laranja, fontWeight: '700' },
+
+  // PERFIL CLIENTE
+  perfilLinha: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.cinzaBorda },
+  perfilIcone: { fontSize: 18, width: 24, textAlign: 'center' },
+  perfilLabel: { fontSize: 11, color: C.cinza, fontWeight: '500' },
+  perfilValor: { fontSize: 14, color: C.texto, fontWeight: '500', marginTop: 2 },
 
   // FORMULÁRIO
   label: { fontSize: 12, fontWeight: '600', color: C.textoSub, marginBottom: 5, marginTop: 14 },
@@ -1139,11 +1545,17 @@ const s = StyleSheet.create({
   obsBox: { borderTopWidth: 1, borderTopColor: C.cinzaBorda, padding: 14 },
   obsLabel: { fontSize: 11, fontWeight: '600', color: C.cinza, marginBottom: 6 },
   obsPreview: { fontSize: 11, color: C.cinza, marginTop: 3, fontStyle: 'italic' },
+  anexoPreview: { fontSize: 11, color: C.verde, marginTop: 2, fontStyle: 'italic' },
   obsInput: { backgroundColor: C.cinzaClaro, borderRadius: 10, padding: 10, fontSize: 13, color: C.texto, minHeight: 60 },
   obsSalvar: { backgroundColor: C.verde, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 7 },
   obsSalvarTexto: { color: '#fff', fontSize: 12, fontWeight: '600' },
   obsExcluir: { backgroundColor: C.erroClaro, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 },
   obsExcluirTexto: { color: C.erro, fontSize: 12, fontWeight: '600' },
+  btnAnexar: { backgroundColor: C.cinzaClaro, borderRadius: 10, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: C.cinzaBorda, borderStyle: 'dashed' as any },
+  btnAnexarTexto: { color: C.textoSub, fontSize: 13, fontWeight: '500' },
+  anexoCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.verdeClaro, borderRadius: 10, padding: 10, gap: 10 },
+  anexoNome: { fontSize: 13, color: C.verde, fontWeight: '500' },
+  anexoRemover: { padding: 4 },
   btnWA: { backgroundColor: C.wa, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   btnWATexto: { color: '#fff', fontWeight: '700', fontSize: 14 },
   btnEmail: { backgroundColor: C.verde, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
