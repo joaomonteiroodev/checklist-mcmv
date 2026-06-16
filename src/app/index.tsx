@@ -801,6 +801,41 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir }: {
   }
 
   const waLink = `https://wa.me/${formatarTelefoneWA(cliente.telefone)}`;
+  const EMAILJS_SERVICE_ID = 'service_5kcdmca';
+const EMAILJS_TEMPLATE_ID = 'template_loetntf';
+const EMAILJS_PUBLIC_KEY = 'UTaEmAAnR1rOz-qgQ';
+
+const [emailModal, setEmailModal] = useState(false);
+const [emailDestino, setEmailDestino] = useState('');
+const [enviandoEmail, setEnviandoEmail] = useState(false);
+
+async function enviarEmail() {
+  if (!emailDestino.trim()) { alert('Digite o e-mail de destino.'); return; }
+  setEnviandoEmail(true);
+  const pendentes = cliente.docs.filter(d => !d.entregue).map(d => `• ${d.nome}`).join('\n');
+  const entregues = cliente.docs.filter(d => d.entregue).map(d => `✓ ${d.nome}`).join('\n');
+  const corpo = `DOCUMENTOS ENTREGUES:\n${entregues || 'Nenhum'}\n\nDOCUMENTOS PENDENTES:\n${pendentes || 'Nenhum'}`;
+  try {
+    const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        service_id: EMAILJS_SERVICE_ID,
+        template_id: EMAILJS_TEMPLATE_ID,
+        user_id: EMAILJS_PUBLIC_KEY,
+        template_params: {
+          to_email: emailDestino,
+          cliente_nome: cliente.nome,
+          empreendimento: cliente.empreendimento || 'Não informado',
+          corpo,
+        },
+      }),
+    });
+    if (res.ok) { alert('E-mail enviado com sucesso!'); setEmailModal(false); setEmailDestino(''); }
+    else { alert('Erro ao enviar. Verifique as configurações do EmailJS.'); }
+  } catch { alert('Erro de conexão ao tentar enviar o e-mail.'); }
+  finally { setEnviandoEmail(false); }
+}
 
   return (
     <View style={s.container}>
@@ -836,6 +871,35 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir }: {
               <Text style={s.btnWATexto}>📱 Abrir WhatsApp</Text>
             </TouchableOpacity>
           ) : null}
+            <TouchableOpacity style={[s.btnWA, { backgroundColor: C.verde, marginTop: 10 }]} onPress={() => setEmailModal(true)}>
+  <Text style={s.btnWATexto}>✉️ Enviar por E-mail</Text>
+</TouchableOpacity>
+
+<Modal visible={emailModal} animationType="slide" transparent>
+  <View style={s.modalFundo}>
+    <View style={s.modalBox}>
+      <Text style={s.modalTitulo}>Enviar checklist</Text>
+      <Text style={s.label}>E-mail de destino</Text>
+      <TextInput
+        style={s.input}
+        placeholder="cliente@exemplo.com"
+        value={emailDestino}
+        onChangeText={setEmailDestino}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        placeholderTextColor={C.cinza}
+      />
+      <View style={s.modalBotoes}>
+        <TouchableOpacity style={s.btnCancelar} onPress={() => setEmailModal(false)}>
+          <Text style={s.btnCancelarTexto}>Cancelar</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[s.btnSalvar, enviandoEmail && { opacity: 0.6 }]} onPress={enviarEmail} disabled={enviandoEmail}>
+          <Text style={s.btnSalvarTexto}>{enviandoEmail ? 'Enviando...' : 'Enviar'}</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  </View>
+</Modal>
           <TouchableOpacity
             style={[s.btnSalvar, { backgroundColor: C.erro, marginHorizontal: 0 }]}
             onPress={() => onExcluir(cliente)}
