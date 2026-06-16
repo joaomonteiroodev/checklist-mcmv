@@ -363,6 +363,8 @@ function AppPrincipal({ user }: { user: User }) {
   const [userRole, setUserRole] = useState<Role>('corretor');
   const [userGestorId, setUserGestorId] = useState<string | null>(null);
   const [userNomeCompleto, setUserNomeCompleto] = useState('');
+  const [perfilIncompleto, setPerfilIncompleto] = useState(false);
+  const [userDocId, setUserDocId] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
   const [filtroFaixa, setFiltroFaixa] = useState<string>('Todas');
   const [filtroStatus, setFiltroStatus] = useState<string>('Todos');
@@ -373,7 +375,6 @@ function AppPrincipal({ user }: { user: User }) {
   const [novaRenda, setNovaRenda] = useState('');
   const [novoEmpreendimento, setNovoEmpreendimento] = useState('');
   const [modalExcluirCliente, setModalExcluirCliente] = useState<Cliente | null>(null);
-  const [modalPerfilCliente, setModalPerfilCliente] = useState<Cliente | null>(null);
 
   const faixaPreview = novaRenda ? calcularFaixa(parseFloat(novaRenda.replace(',', '.'))) : null;
 
@@ -381,10 +382,18 @@ function AppPrincipal({ user }: { user: User }) {
     const q = query(collection(db, 'usuarios'), where('uid', '==', user.uid));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       if (!snapshot.empty) {
-        const data = snapshot.docs[0].data();
+        const docSnap = snapshot.docs[0];
+        const data = docSnap.data();
+        setUserDocId(docSnap.id);
         setUserRole(data.role || 'corretor');
         setUserGestorId(data.gestorId || null);
-        setUserNomeCompleto(data.nomeCompleto || data.nome || '');
+        const nome = data.nomeCompleto || data.nome || '';
+        setUserNomeCompleto(nome);
+        // Usuário antigo sem nome: pede para completar
+        setPerfilIncompleto(!nome.trim());
+      } else {
+        // Usuário novo sem documento no Firestore (criado antes dessa versão)
+        setPerfilIncompleto(true);
       }
     });
     return unsubscribe;
@@ -463,6 +472,10 @@ function AppPrincipal({ user }: { user: User }) {
     );
   }
 
+  if (perfilIncompleto) {
+    return <TelaCompletarPerfil user={user} userDocId={userDocId} onConcluido={() => setPerfilIncompleto(false)} />;
+  }
+
   if (tela === 'checklist' && clienteSelecionado) {
     return (
       <ChecklistScreen
@@ -471,7 +484,6 @@ function AppPrincipal({ user }: { user: User }) {
         onAtualizar={atualizarCliente}
         onExcluir={(c) => { excluirCliente(c); setTela('lista'); }}
         userEmail={user.email}
-        onVerPerfil={(c) => setModalPerfilCliente(c)}
       />
     );
   }
@@ -529,7 +541,6 @@ function AppPrincipal({ user }: { user: User }) {
             setFiltroStatus={setFiltroStatus}
             onAbrirCliente={(c) => { setClienteSelecionado(c); setTela('checklist'); }}
             onExcluirCliente={setModalExcluirCliente}
-            onVerPerfil={setModalPerfilCliente}
           />
         )}
         {abaAtiva === 'dashboard' && <TelaDashboard clientes={clientes} />}
@@ -628,106 +639,101 @@ function AppPrincipal({ user }: { user: User }) {
         </View>
       </Modal>
 
-      {/* Modal Perfil do Cliente */}
-      <Modal visible={modalPerfilCliente !== null} animationType="slide" transparent>
-        <View style={s.modalFundo}>
-          <View style={s.modalBox}>
-            <View style={s.modalAlca} />
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <Text style={s.modalTitulo}>Dados do Cliente</Text>
-              <TouchableOpacity onPress={() => setModalPerfilCliente(null)} style={s.modalFechar}>
-                <Text style={{ color: C.cinza, fontSize: 16 }}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            {modalPerfilCliente && (
-              <>
-                <View style={{ alignItems: 'center', marginBottom: 20 }}>
-                  <View style={[s.avatar, { width: 64, height: 64, borderRadius: 32 }]}>
-                    <Text style={[s.avatarTexto, { fontSize: 22 }]}>{getIniciais(modalPerfilCliente.nome)}</Text>
-                  </View>
-                  <Text style={{ fontSize: 18, fontWeight: '700', color: C.texto, marginTop: 10 }}>{modalPerfilCliente.nome}</Text>
-                  {modalPerfilCliente.status && (
-                    <View style={[s.statusBadge, { backgroundColor: STATUS_CORES[modalPerfilCliente.status]?.bg || C.cinzaClaro, marginTop: 6 }]}>
-                      <Text style={[s.statusTexto, { color: STATUS_CORES[modalPerfilCliente.status]?.text || C.cinza }]}>{modalPerfilCliente.status}</Text>
-                    </View>
-                  )}
-                </View>
-
-                <View style={s.perfilLinha}>
-                  <Text style={s.perfilIcone}>📱</Text>
-                  <View>
-                    <Text style={s.perfilLabel}>Telefone</Text>
-                    <TouchableOpacity onPress={() => Linking.openURL(`https://wa.me/${formatarTelefoneWA(modalPerfilCliente.telefone)}`)}>
-                      <Text style={[s.perfilValor, { color: C.wa }]}>{modalPerfilCliente.telefone || '—'}</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                {modalPerfilCliente.email ? (
-                  <View style={s.perfilLinha}>
-                    <Text style={s.perfilIcone}>✉️</Text>
-                    <View>
-                      <Text style={s.perfilLabel}>E-mail</Text>
-                      <Text style={s.perfilValor}>{modalPerfilCliente.email}</Text>
-                    </View>
-                  </View>
-                ) : null}
-
-                <View style={s.perfilLinha}>
-                  <Text style={s.perfilIcone}>💼</Text>
-                  <View>
-                    <Text style={s.perfilLabel}>Perfil profissional</Text>
-                    <Text style={s.perfilValor}>{modalPerfilCliente.perfil}</Text>
-                  </View>
-                </View>
-
-                <View style={s.perfilLinha}>
-                  <Text style={s.perfilIcone}>💰</Text>
-                  <View>
-                    <Text style={s.perfilLabel}>Renda familiar</Text>
-                    <Text style={s.perfilValor}>{formatarRenda(modalPerfilCliente.renda)} · {getLabelFaixa(modalPerfilCliente.faixa)}</Text>
-                  </View>
-                </View>
-
-                {modalPerfilCliente.empreendimento ? (
-                  <View style={s.perfilLinha}>
-                    <Text style={s.perfilIcone}>🏠</Text>
-                    <View>
-                      <Text style={s.perfilLabel}>Empreendimento</Text>
-                      <Text style={s.perfilValor}>{modalPerfilCliente.empreendimento}</Text>
-                    </View>
-                  </View>
-                ) : null}
-
-                {modalPerfilCliente.corretorNome ? (
-                  <View style={s.perfilLinha}>
-                    <Text style={s.perfilIcone}>👤</Text>
-                    <View>
-                      <Text style={s.perfilLabel}>Corretor responsável</Text>
-                      <Text style={s.perfilValor}>{modalPerfilCliente.corretorNome}</Text>
-                    </View>
-                  </View>
-                ) : null}
-
-                <TouchableOpacity
-                  style={[s.btnWA, { marginTop: 16 }]}
-                  onPress={() => {
-                    setModalPerfilCliente(null);
-                    if (clienteSelecionado?.id !== modalPerfilCliente.id) {
-                      setClienteSelecionado(modalPerfilCliente);
-                      setTela('checklist');
-                    }
-                  }}
-                >
-                  <Text style={s.btnWATexto}>📋 Ver checklist</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        </View>
-      </Modal>
     </View>
+  );
+}
+
+// ─── COMPLETAR PERFIL ─────────────────────────────────────────────────────────
+function TelaCompletarPerfil({ user, userDocId, onConcluido }: {
+  user: User;
+  userDocId: string | null;
+  onConcluido: () => void;
+}) {
+  const [nome, setNome] = useState('');
+  const [sobrenome, setSobrenome] = useState('');
+  const [role, setRole] = useState<Role>('corretor');
+  const [gestorCodigo, setGestorCodigo] = useState('');
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState('');
+
+  async function salvar() {
+    if (!nome.trim()) { setErro('Digite seu nome.'); return; }
+    setSalvando(true);
+    setErro('');
+    const nomeCompleto = `${nome.trim()} ${sobrenome.trim()}`.trim();
+    const gestorId = (role === 'corretor' && gestorCodigo.trim()) ? gestorCodigo.trim() : null;
+    try {
+      if (userDocId) {
+        await updateDoc(doc(db, 'usuarios', userDocId), { nome: nome.trim(), sobrenome: sobrenome.trim(), nomeCompleto, role, gestorId });
+      } else {
+        await addDoc(collection(db, 'usuarios'), { uid: user.uid, email: user.email, nome: nome.trim(), sobrenome: sobrenome.trim(), nomeCompleto, role, gestorId });
+      }
+      onConcluido();
+    } catch { setErro('Erro ao salvar. Tente novamente.'); }
+    finally { setSalvando(false); }
+  }
+
+  return (
+    <ScrollView style={[s.loginBg, { flex: 1 }]} contentContainerStyle={{ paddingBottom: 60 }}>
+      <View style={s.loginTopo}>
+        <View style={s.loginLogoBox}>
+          <Text style={s.loginLogoCheck}>✓</Text>
+        </View>
+        <Text style={s.loginNome}>Certus</Text>
+        <Text style={s.loginTagline}>Complete seu cadastro para continuar</Text>
+      </View>
+
+      <View style={s.loginCard}>
+        <Text style={s.loginCardTitulo}>Completar perfil</Text>
+        <Text style={s.loginCardSub}>Precisamos de algumas informações básicas</Text>
+
+        <Text style={s.label}>Tipo de conta</Text>
+        <View style={s.opcoes}>
+          {(['corretor', 'gestor'] as Role[]).map(r => (
+            <TouchableOpacity key={r} style={[s.opcao, role === r && s.opcaoAtiva]} onPress={() => setRole(r)}>
+              <Text style={[s.opcaoTexto, role === r && s.opcaoTextoAtivo]}>
+                {r === 'corretor' ? '👤 Corretor' : '🏢 Gestor'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={s.label}>Nome</Text>
+        <TextInput style={s.input} placeholder="Ex.: João" value={nome} onChangeText={setNome} placeholderTextColor={C.cinza} />
+
+        <Text style={s.label}>Sobrenome</Text>
+        <TextInput style={s.input} placeholder="Ex.: Monteiro" value={sobrenome} onChangeText={setSobrenome} placeholderTextColor={C.cinza} />
+
+        {role === 'corretor' && (
+          <>
+            <Text style={s.label}>Código do gestor (opcional)</Text>
+            <TextInput
+              style={s.input}
+              placeholder="Cole o UID do seu gestor aqui"
+              value={gestorCodigo}
+              onChangeText={setGestorCodigo}
+              autoCapitalize="none"
+              placeholderTextColor={C.cinza}
+            />
+            <Text style={{ fontSize: 11, color: C.cinza, marginTop: 4 }}>
+              Peça o código para o seu gestor nas Configurações do app.
+            </Text>
+          </>
+        )}
+
+        {erro ? <Text style={s.loginErro}>{erro}</Text> : null}
+
+        <TouchableOpacity style={[s.loginBotao, salvando && { opacity: 0.6 }]} onPress={salvar} disabled={salvando}>
+          <Text style={s.loginBotaoTexto}>{salvando ? 'Salvando...' : 'Concluir cadastro'}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={() => signOut(auth)} style={{ marginTop: 16, alignItems: 'center' }}>
+          <Text style={{ color: C.cinza, fontSize: 13 }}>Sair e entrar com outra conta</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={s.loginRodape}>Certus © 2026</Text>
+    </ScrollView>
   );
 }
 
@@ -735,7 +741,7 @@ function AppPrincipal({ user }: { user: User }) {
 function TelaClientes({
   clientes, todosClientes, userRole, busca, setBusca,
   filtroFaixa, setFiltroFaixa, filtroStatus, setFiltroStatus,
-  onAbrirCliente, onExcluirCliente, onVerPerfil,
+  onAbrirCliente, onExcluirCliente,
 }: {
   clientes: Cliente[];
   todosClientes: Cliente[];
@@ -748,7 +754,6 @@ function TelaClientes({
   setFiltroStatus: (v: string) => void;
   onAbrirCliente: (c: Cliente) => void;
   onExcluirCliente: (c: Cliente) => void;
-  onVerPerfil: (c: Cliente) => void;
 }) {
   const faixas = ['Todas', '1', '2', '3', '4', 'Fora do MCMV'];
   const statusList: string[] = ['Todos', 'Em atendimento', 'Em análise', 'Aguardando banco', 'Aprovado', 'Reprovado'];
@@ -820,11 +825,9 @@ function TelaClientes({
           return (
             <View key={c.id} style={s.cardWrapper}>
               <TouchableOpacity style={[s.card, parado && { borderWidth: 1, borderColor: C.laranja }]} onPress={() => onAbrirCliente(c)} activeOpacity={0.7}>
-                <TouchableOpacity onPress={() => onVerPerfil(c)}>
-                  <View style={s.avatar}>
-                    <Text style={s.avatarTexto}>{getIniciais(c.nome)}</Text>
-                  </View>
-                </TouchableOpacity>
+                <View style={s.avatar}>
+                  <Text style={s.avatarTexto}>{getIniciais(c.nome)}</Text>
+                </View>
                 <View style={{ flex: 1, marginLeft: 12 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     <Text style={s.cardNome}>{c.nome}</Text>
@@ -1080,18 +1083,18 @@ function TelaConfiguracoes({ user, userRole, userNome }: { user: User; userRole:
 }
 
 // ─── CHECKLIST ────────────────────────────────────────────────────────────────
-function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail, onVerPerfil }: {
+function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }: {
   cliente: Cliente;
   voltar: () => void;
   onAtualizar: (c: Cliente) => void;
   onExcluir: (c: Cliente) => void;
   userEmail: string | null;
-  onVerPerfil: (c: Cliente) => void;
 }) {
   const [emailModal, setEmailModal] = useState(false);
   const [emailDestino, setEmailDestino] = useState('');
   const [enviandoEmail, setEnviandoEmail] = useState(false);
   const [statusModal, setStatusModal] = useState(false);
+  const [perfilModal, setPerfilModal] = useState(false);
 
   const entregues = cliente.docs.filter(d => d.entregue).length;
   const total = cliente.docs.length;
@@ -1162,7 +1165,7 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail, o
         </TouchableOpacity>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
           <Text style={{ fontSize: 18, fontWeight: '700', color: '#fff', textAlign: 'center' }}>{cliente.nome}</Text>
-          <TouchableOpacity onPress={() => onVerPerfil(cliente)}>
+          <TouchableOpacity onPress={() => setPerfilModal(true)}>
             <Text style={{ fontSize: 18 }}>ℹ️</Text>
           </TouchableOpacity>
         </View>
@@ -1259,6 +1262,93 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail, o
               ))}
             </View>
             <TouchableOpacity style={[s.btnCancelar, { marginTop: 16 }]} onPress={() => setStatusModal(false)}>
+              <Text style={s.btnCancelarTexto}>Fechar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Perfil do Cliente */}
+      <Modal visible={perfilModal} animationType="slide" transparent>
+        <View style={s.modalFundo}>
+          <View style={s.modalBox}>
+            <View style={s.modalAlca} />
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <Text style={s.modalTitulo}>Dados do Cliente</Text>
+              <TouchableOpacity onPress={() => setPerfilModal(false)} style={s.modalFechar}>
+                <Text style={{ color: C.cinza, fontSize: 16 }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ alignItems: 'center', marginBottom: 20 }}>
+              <View style={[s.avatar, { width: 64, height: 64, borderRadius: 32 }]}>
+                <Text style={[s.avatarTexto, { fontSize: 22 }]}>{getIniciais(cliente.nome)}</Text>
+              </View>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: C.texto, marginTop: 10 }}>{cliente.nome}</Text>
+              {cliente.status && (
+                <View style={[s.statusBadge, { backgroundColor: STATUS_CORES[cliente.status]?.bg || C.cinzaClaro, marginTop: 6 }]}>
+                  <Text style={[s.statusTexto, { color: STATUS_CORES[cliente.status]?.text || C.cinza }]}>{cliente.status}</Text>
+                </View>
+              )}
+            </View>
+
+            <View style={s.perfilLinha}>
+              <Text style={s.perfilIcone}>📱</Text>
+              <View>
+                <Text style={s.perfilLabel}>Telefone</Text>
+                <TouchableOpacity onPress={() => Linking.openURL(`https://wa.me/${formatarTelefoneWA(cliente.telefone)}`)}>
+                  <Text style={[s.perfilValor, { color: C.wa }]}>{cliente.telefone || '—'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {cliente.email ? (
+              <View style={s.perfilLinha}>
+                <Text style={s.perfilIcone}>✉️</Text>
+                <View>
+                  <Text style={s.perfilLabel}>E-mail</Text>
+                  <Text style={s.perfilValor}>{cliente.email}</Text>
+                </View>
+              </View>
+            ) : null}
+
+            <View style={s.perfilLinha}>
+              <Text style={s.perfilIcone}>💼</Text>
+              <View>
+                <Text style={s.perfilLabel}>Perfil profissional</Text>
+                <Text style={s.perfilValor}>{cliente.perfil}</Text>
+              </View>
+            </View>
+
+            <View style={s.perfilLinha}>
+              <Text style={s.perfilIcone}>💰</Text>
+              <View>
+                <Text style={s.perfilLabel}>Renda familiar</Text>
+                <Text style={s.perfilValor}>{formatarRenda(cliente.renda)} · {getLabelFaixa(cliente.faixa)}</Text>
+              </View>
+            </View>
+
+            {cliente.empreendimento ? (
+              <View style={s.perfilLinha}>
+                <Text style={s.perfilIcone}>🏠</Text>
+                <View>
+                  <Text style={s.perfilLabel}>Empreendimento</Text>
+                  <Text style={s.perfilValor}>{cliente.empreendimento}</Text>
+                </View>
+              </View>
+            ) : null}
+
+            {cliente.corretorNome ? (
+              <View style={s.perfilLinha}>
+                <Text style={s.perfilIcone}>👤</Text>
+                <View>
+                  <Text style={s.perfilLabel}>Corretor responsável</Text>
+                  <Text style={s.perfilValor}>{cliente.corretorNome}</Text>
+                </View>
+              </View>
+            ) : null}
+
+            <TouchableOpacity style={[s.btnCancelar, { marginTop: 16 }]} onPress={() => setPerfilModal(false)}>
               <Text style={s.btnCancelarTexto}>Fechar</Text>
             </TouchableOpacity>
           </View>
