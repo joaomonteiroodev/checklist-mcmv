@@ -38,13 +38,15 @@ const C = {
   bege: '#F5F0E8',
   begeCard: '#FFFFFF',
   verdeMedio: '#1D9E75',
-  verdeClaro: '#E1F5EE',
+  verdeClaro: '#E8F5F0',
   cinza: '#888780',
   cinzaClaro: '#F0EDE8',
-  texto: '#2C2C2A',
-  textoSub: '#5F5E5A',
+  cinzaBorda: '#E8E4DE',
+  texto: '#1C1C1A',
+  textoSub: '#6B6A66',
   erro: '#993C1D',
   erroClaro: '#FAECE7',
+  wa: '#25D366',
 };
 
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
@@ -57,8 +59,6 @@ interface Documento {
   sub: string;
   entregue: boolean;
   observacao: string;
-  arquivoBase64?: string;
-  arquivoNome?: string;
 }
 
 interface Cliente {
@@ -82,6 +82,11 @@ function calcularFaixa(renda: number): string {
   return 'Fora do MCMV';
 }
 
+function getLabelFaixa(faixa: string): string {
+  if (faixa === 'Fora do MCMV') return 'Fora do MCMV';
+  return `Faixa ${faixa}`;
+}
+
 function getDocsPorPerfil(perfil: Perfil): Omit<Documento, 'entregue' | 'observacao'>[] {
   const comuns = [
     { id: 1, nome: 'RG e CPF', sub: 'Documento de identificação' },
@@ -94,7 +99,9 @@ function getDocsPorPerfil(perfil: Perfil): Omit<Documento, 'entregue' | 'observa
   ];
   if (perfil === 'CLT') {
     return [
-      ...comuns.slice(0, 3),
+      { id: 1, nome: 'RG e CPF', sub: 'Documento de identificação' },
+      { id: 2, nome: 'Certidão de Casamento | Nascimento | Óbito', sub: 'Conforme estado civil' },
+      { id: 3, nome: 'E-mail', sub: 'Endereço de e-mail ativo' },
       { id: 4, nome: 'Comprovante de renda', sub: 'Últimos 3 holerites' },
       { id: 5, nome: 'Comprovante de residência', sub: 'Últimos 3 meses' },
       { id: 6, nome: 'CTPS', sub: 'Carteira de trabalho' },
@@ -104,7 +111,9 @@ function getDocsPorPerfil(perfil: Perfil): Omit<Documento, 'entregue' | 'observa
   }
   if (perfil === 'Autônomo') {
     return [
-      ...comuns.slice(0, 3),
+      { id: 1, nome: 'RG e CPF', sub: 'Documento de identificação' },
+      { id: 2, nome: 'Certidão de Casamento | Nascimento | Óbito', sub: 'Conforme estado civil' },
+      { id: 3, nome: 'E-mail', sub: 'Endereço de e-mail ativo' },
       { id: 4, nome: '06 últimos extratos bancários', sub: 'De todas as contas' },
       { id: 5, nome: '06 últimas faturas', sub: 'Faturas de cartão ou cobranças' },
       { id: 6, nome: 'Comprovante de residência', sub: 'Últimos 3 meses' },
@@ -116,7 +125,9 @@ function getDocsPorPerfil(perfil: Perfil): Omit<Documento, 'entregue' | 'observa
   }
   if (perfil === 'Func. Público') {
     return [
-      ...comuns.slice(0, 3),
+      { id: 1, nome: 'RG e CPF', sub: 'Documento de identificação' },
+      { id: 2, nome: 'Certidão de Casamento | Nascimento | Óbito', sub: 'Conforme estado civil' },
+      { id: 3, nome: 'E-mail', sub: 'Endereço de e-mail ativo' },
       { id: 4, nome: '03 últimos comprovantes de renda', sub: 'Contracheques' },
       { id: 5, nome: 'Contrato ou termo de posse', sub: 'Documento de vínculo com o órgão' },
       { id: 6, nome: 'CTPS', sub: 'Carteira de trabalho' },
@@ -149,6 +160,17 @@ function traduzirErroAuth(code: string): string {
     default: return 'Erro ao autenticar: ' + code;
   }
 }
+
+function getIniciais(nome: string): string {
+  const partes = nome.trim().split(/\s+/);
+  if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
+  return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
+}
+
+// ─── EMAILJS ──────────────────────────────────────────────────────────────────
+const EMAILJS_SERVICE_ID = 'service_5kcdmca';
+const EMAILJS_TEMPLATE_ID = 'template_loetntf';
+const EMAILJS_PUBLIC_KEY = 'UTaEmAAnR1rOz-qgQ';
 
 // ─── RAIZ ─────────────────────────────────────────────────────────────────────
 export default function HomeScreen() {
@@ -188,8 +210,7 @@ function LoginScreen() {
     if (!email.trim()) { setErro('Digite seu e-mail para recuperar a senha.'); return; }
     try {
       await sendPasswordResetEmail(auth, email.trim());
-      setSenhaEnviada(true);
-      setErro('');
+      setSenhaEnviada(true); setErro('');
     } catch (e: any) { setErro(traduzirErroAuth(e.code || '')); }
   }
 
@@ -205,80 +226,44 @@ function LoginScreen() {
   }
 
   return (
-    <View style={s.loginContainer}>
-      {/* Topo verde com logo */}
+    <View style={s.loginBg}>
       <View style={s.loginTopo}>
         <View style={s.loginLogoBox}>
-          <Text style={s.loginLogoIcon}>✓</Text>
+          <Text style={s.loginLogoCheck}>✓</Text>
         </View>
-        <Text style={s.loginNomeApp}>Certus</Text>
+        <Text style={s.loginNome}>Certus</Text>
         <Text style={s.loginTagline}>Documentação MCMV simplificada</Text>
       </View>
 
-      {/* Card branco */}
       <View style={s.loginCard}>
-        <Text style={s.loginCardTitulo}>
-          {modoCadastro ? 'Criar conta' : 'Bem-vindo de volta'}
-        </Text>
-        <Text style={s.loginCardSub}>
-          {modoCadastro ? 'Preencha os dados para começar' : 'Entre com sua conta de corretor'}
-        </Text>
+        <Text style={s.loginCardTitulo}>{modoCadastro ? 'Criar conta' : 'Bem-vindo de volta'}</Text>
+        <Text style={s.loginCardSub}>{modoCadastro ? 'Preencha os dados para começar' : 'Acesse para gerenciar seus clientes'}</Text>
 
         <Text style={s.label}>E-mail</Text>
-        <TextInput
-          style={s.input}
-          placeholder="seuemail@exemplo.com"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          placeholderTextColor={C.cinza}
-        />
+        <TextInput style={s.input} placeholder="seu@email.com" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholderTextColor={C.cinza} />
 
         <Text style={s.label}>Senha</Text>
-        <TextInput
-          style={s.input}
-          placeholder="Mínimo 6 caracteres"
-          value={senha}
-          onChangeText={setSenha}
-          secureTextEntry
-          placeholderTextColor={C.cinza}
-        />
+        <TextInput style={s.input} placeholder="••••••••" value={senha} onChangeText={setSenha} secureTextEntry placeholderTextColor={C.cinza} />
 
         {erro ? <Text style={s.loginErro}>{erro}</Text> : null}
-        {senhaEnviada ? (
-          <Text style={{ color: C.verdeMedio, fontSize: 13, textAlign: 'center', marginTop: 8 }}>
-            E-mail de recuperação enviado!
-          </Text>
-        ) : null}
+        {senhaEnviada ? <Text style={{ color: C.verdeMedio, fontSize: 13, textAlign: 'center', marginTop: 8 }}>E-mail de recuperação enviado!</Text> : null}
 
-        <TouchableOpacity
-          style={[s.loginBotao, carregando && { opacity: 0.6 }]}
-          onPress={entrar}
-          disabled={carregando}
-        >
-          <Text style={s.loginBotaoTexto}>
-            {carregando ? 'Aguarde...' : modoCadastro ? 'Criar conta' : 'Entrar'}
-          </Text>
+        <TouchableOpacity style={[s.loginBotao, carregando && { opacity: 0.6 }]} onPress={entrar} disabled={carregando}>
+          <Text style={s.loginBotaoTexto}>{carregando ? 'Aguarde...' : modoCadastro ? 'Criar conta' : 'Entrar'}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={() => { setModoCadastro(!modoCadastro); setErro(''); }}
-          style={{ marginTop: 14, alignItems: 'center' }}
-        >
-          <Text style={{ color: C.verde, fontSize: 13, fontWeight: '500' }}>
-            {modoCadastro ? 'Já tenho conta — Entrar' : 'Não tenho conta — Criar conta'}
-          </Text>
+        <TouchableOpacity onPress={() => { setModoCadastro(!modoCadastro); setErro(''); }} style={{ marginTop: 16, alignItems: 'center' }}>
+          <Text style={{ color: C.texto, fontSize: 14, fontWeight: '500' }}>{modoCadastro ? 'Já tenho conta — Entrar' : 'Não tenho conta'}</Text>
         </TouchableOpacity>
 
         {!modoCadastro && (
           <TouchableOpacity onPress={recuperarSenha} style={{ marginTop: 10, alignItems: 'center' }}>
-            <Text style={{ color: C.cinza, fontSize: 12 }}>Esqueceu a senha?</Text>
+            <Text style={{ color: C.cinza, fontSize: 13 }}>Esqueceu a senha?</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      <Text style={s.loginRodape}>Certus © 2026 · Todos os direitos reservados</Text>
+      <Text style={s.loginRodape}>Certus © 2026</Text>
     </View>
   );
 }
@@ -309,11 +294,6 @@ function AppPrincipal({ user }: { user: User }) {
     }, () => setCarregando(false));
     return unsubscribe;
   }, [user.uid]);
-
-  function abrirCliente(cliente: Cliente) {
-    setClienteSelecionado(cliente);
-    setTela('checklist');
-  }
 
   async function adicionarCliente() {
     if (!novoNome.trim() || !novaRenda.trim()) return;
@@ -361,39 +341,36 @@ function AppPrincipal({ user }: { user: User }) {
     );
   }
 
+  const mediaPct = clientes.length > 0
+    ? Math.round(clientes.reduce((acc, c) => {
+        const e = c.docs.filter(d => d.entregue).length;
+        return acc + (c.docs.length > 0 ? e / c.docs.length : 0);
+      }, 0) / clientes.length * 100)
+    : 0;
+
   return (
     <View style={s.container}>
       {/* HEADER */}
       <View style={s.header}>
-        <View style={s.headerTop}>
-          <View style={s.logoRow}>
-            <View style={s.logoMark}><Text style={s.logoIcon}>✓</Text></View>
-            <View>
-              <Text style={s.headerTitulo}>Certus</Text>
-              <Text style={s.headerSub}>Documentação MCMV</Text>
+        <View style={s.headerLogo}>
+          <View style={s.logoBox}><Text style={s.logoCheck}>✓</Text></View>
+          <Text style={s.headerNome}>Certus</Text>
+        </View>
+        <Text style={s.headerSub}>
+          {abaAtiva === 'clientes' ? 'Documentação MCMV' : abaAtiva === 'dashboard' ? 'Dashboard' : 'Configurações'}
+        </Text>
+        {abaAtiva === 'clientes' && (
+          <View style={s.headerStats}>
+            <View style={s.headerStatItem}>
+              <Text style={s.headerStatNum}>{clientes.length}</Text>
+              <Text style={s.headerStatLabel}>Clientes ativos</Text>
+            </View>
+            <View style={s.headerDivider} />
+            <View style={s.headerStatItem}>
+              <Text style={[s.headerStatNum, { color: C.dourado }]}>{mediaPct}%</Text>
+              <Text style={s.headerStatLabel}>Média geral</Text>
             </View>
           </View>
-        </View>
-        {abaAtiva === 'clientes' && (
-          <View style={s.progressoGeral}>
-            <Text style={s.progressoLabel}>
-              {clientes.length} cliente{clientes.length !== 1 ? 's' : ''} ativos
-            </Text>
-            <Text style={s.progressoMedia}>
-              {clientes.length > 0
-                ? `Média: ${Math.round(clientes.reduce((acc, c) => {
-                    const e = c.docs.filter(d => d.entregue).length;
-                    return acc + (c.docs.length > 0 ? e / c.docs.length : 0);
-                  }, 0) / clientes.length * 100)}% concluído`
-                : 'Nenhum cliente ainda'}
-            </Text>
-          </View>
-        )}
-        {abaAtiva === 'dashboard' && (
-          <Text style={[s.headerSub, { marginTop: 4 }]}>Visão geral da carteira</Text>
-        )}
-        {abaAtiva === 'configuracoes' && (
-          <Text style={[s.headerSub, { marginTop: 4 }]}>Gerencie sua conta</Text>
         )}
       </View>
 
@@ -402,7 +379,7 @@ function AppPrincipal({ user }: { user: User }) {
         {abaAtiva === 'clientes' && (
           <TelaClientes
             clientes={clientes}
-            onAbrirCliente={abrirCliente}
+            onAbrirCliente={(c) => { setClienteSelecionado(c); setTela('checklist'); }}
             onExcluirCliente={setModalExcluirCliente}
           />
         )}
@@ -410,7 +387,7 @@ function AppPrincipal({ user }: { user: User }) {
         {abaAtiva === 'configuracoes' && <TelaConfiguracoes user={user} />}
       </View>
 
-      {/* FAB — botão flutuante */}
+      {/* FAB */}
       {abaAtiva === 'clientes' && (
         <TouchableOpacity style={s.fab} onPress={() => setModalAberto(true)}>
           <Text style={s.fabIcon}>+</Text>
@@ -420,18 +397,14 @@ function AppPrincipal({ user }: { user: User }) {
       {/* NAVBAR */}
       <View style={s.navbar}>
         {([
-          { key: 'clientes', label: 'Clientes', icon: '👥' },
-          { key: 'dashboard', label: 'Dashboard', icon: '📊' },
-          { key: 'configuracoes', label: 'Config.', icon: '⚙️' },
-        ] as { key: Aba; label: string; icon: string }[]).map(item => (
-          <TouchableOpacity
-            key={item.key}
-            style={s.navItem}
-            onPress={() => setAbaAtiva(item.key)}
-          >
-            <Text style={[s.navIcon, abaAtiva === item.key && s.navIconAtivo]}>{item.icon}</Text>
+          { key: 'clientes', label: 'Clientes', icone: '👤' },
+          { key: 'dashboard', label: 'Dashboard', icone: '📊' },
+          { key: 'configuracoes', label: 'Config', icone: '⚙️' },
+        ] as { key: Aba; label: string; icone: string }[]).map(item => (
+          <TouchableOpacity key={item.key} style={s.navItem} onPress={() => setAbaAtiva(item.key)}>
+            <Text style={[s.navIcone, abaAtiva === item.key && { color: C.verde }]}>{item.icone}</Text>
             <Text style={[s.navLabel, abaAtiva === item.key && s.navLabelAtivo]}>{item.label}</Text>
-            {abaAtiva === item.key && <View style={s.navDot} />}
+            <View style={[s.navDot, { backgroundColor: abaAtiva === item.key ? C.dourado : 'transparent' }]} />
           </TouchableOpacity>
         ))}
       </View>
@@ -440,13 +413,19 @@ function AppPrincipal({ user }: { user: User }) {
       <Modal visible={modalAberto} animationType="slide" transparent>
         <View style={s.modalFundo}>
           <View style={s.modalBox}>
-            <Text style={s.modalTitulo}>Novo Cliente</Text>
+            <View style={s.modalAlca} />
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={s.modalTitulo}>Novo Cliente</Text>
+              <TouchableOpacity onPress={() => setModalAberto(false)} style={s.modalFechar}>
+                <Text style={{ color: C.cinza, fontSize: 16 }}>✕</Text>
+              </TouchableOpacity>
+            </View>
             <Text style={s.label}>Nome completo</Text>
-            <TextInput style={s.input} placeholder="Ex: João da Silva" value={novoNome} onChangeText={setNovoNome} placeholderTextColor={C.cinza} />
+            <TextInput style={s.input} placeholder="Ex.: Ana Paula Ribeiro" value={novoNome} onChangeText={setNovoNome} placeholderTextColor={C.cinza} />
             <Text style={s.label}>Telefone (WhatsApp)</Text>
-            <TextInput style={s.input} placeholder="Ex: 81999990000" value={novoTelefone} onChangeText={setNovoTelefone} keyboardType="phone-pad" placeholderTextColor={C.cinza} />
+            <TextInput style={s.input} placeholder="(81) 99999-9999" value={novoTelefone} onChangeText={setNovoTelefone} keyboardType="phone-pad" placeholderTextColor={C.cinza} />
             <Text style={s.label}>Empreendimento</Text>
-            <TextInput style={s.input} placeholder="Ex: Mirante Belvedere" value={novoEmpreendimento} onChangeText={setNovoEmpreendimento} placeholderTextColor={C.cinza} />
+            <TextInput style={s.input} placeholder="Ex.: Mirante Belvedere" value={novoEmpreendimento} onChangeText={setNovoEmpreendimento} placeholderTextColor={C.cinza} />
             <Text style={s.label}>Perfil profissional</Text>
             <View style={s.opcoes}>
               {(['CLT', 'Autônomo', 'Func. Público'] as Perfil[]).map(p => (
@@ -456,11 +435,11 @@ function AppPrincipal({ user }: { user: User }) {
               ))}
             </View>
             <Text style={s.label}>Renda familiar (R$)</Text>
-            <TextInput style={s.input} placeholder="Ex: 3200" value={novaRenda} onChangeText={setNovaRenda} keyboardType="numeric" placeholderTextColor={C.cinza} />
+            <TextInput style={s.input} placeholder="Ex.: 3200" value={novaRenda} onChangeText={setNovaRenda} keyboardType="numeric" placeholderTextColor={C.cinza} />
             {faixaPreview && (
               <View style={[s.faixaBox, faixaPreview === 'Fora do MCMV' ? s.faixaBoxErro : s.faixaBoxOk]}>
-                <Text style={[s.faixaTexto, faixaPreview === 'Fora do MCMV' ? s.faixaTextoErro : s.faixaTextoOk]}>
-                  {faixaPreview === 'Fora do MCMV' ? 'Renda acima do limite do MCMV (R$ 13.000)' : `Faixa ${faixaPreview} — cliente elegível ao MCMV`}
+                <Text style={[s.faixaTexto, faixaPreview === 'Fora do MCMV' ? { color: C.erro } : { color: C.verdeMedio }]}>
+                  {faixaPreview === 'Fora do MCMV' ? 'Renda acima do limite do MCMV' : `Faixa ${faixaPreview} — cliente elegível ao MCMV`}
                 </Text>
               </View>
             )}
@@ -498,7 +477,6 @@ function AppPrincipal({ user }: { user: User }) {
     </View>
   );
 }
-
 // ─── ABA CLIENTES ─────────────────────────────────────────────────────────────
 function TelaClientes({ clientes, onAbrirCliente, onExcluirCliente }: {
   clientes: Cliente[];
@@ -506,14 +484,11 @@ function TelaClientes({ clientes, onAbrirCliente, onExcluirCliente }: {
   onExcluirCliente: (c: Cliente) => void;
 }) {
   return (
-    <ScrollView style={s.scroll} contentContainerStyle={{ paddingBottom: 100 }}>
-      <Text style={s.secao}>Clientes ({clientes.length})</Text>
+    <ScrollView style={{ flex: 1, paddingHorizontal: 16, paddingTop: 12 }} contentContainerStyle={{ paddingBottom: 100 }}>
       {clientes.length === 0 && (
         <View style={{ alignItems: 'center', marginTop: 60 }}>
           <Text style={{ fontSize: 32, marginBottom: 12 }}>📋</Text>
-          <Text style={{ color: C.cinza, fontSize: 14, textAlign: 'center' }}>
-            Nenhum cliente ainda.{'\n'}Toque no + para adicionar.
-          </Text>
+          <Text style={{ color: C.cinza, fontSize: 14, textAlign: 'center' }}>Nenhum cliente ainda.{'\n'}Toque no + para adicionar.</Text>
         </View>
       )}
       {clientes.map(c => {
@@ -522,30 +497,26 @@ function TelaClientes({ clientes, onAbrirCliente, onExcluirCliente }: {
         const pct = total > 0 ? Math.round((entregues / total) * 100) : 0;
         const pendentes = total - entregues;
         const fora = c.faixa === 'Fora do MCMV';
-        const iniciais = c.nome.split(' ').map(n => n[0]).slice(0, 2).join('');
         return (
           <View key={c.id} style={s.cardWrapper}>
-            <TouchableOpacity style={s.card} onPress={() => onAbrirCliente(c)}>
+            <TouchableOpacity style={s.card} onPress={() => onAbrirCliente(c)} activeOpacity={0.7}>
               <View style={s.avatar}>
-                <Text style={s.avatarTexto}>{iniciais}</Text>
+                <Text style={s.avatarTexto}>{getIniciais(c.nome)}</Text>
               </View>
-              <View style={s.cardInfo}>
+              <View style={{ flex: 1, marginLeft: 12 }}>
                 <Text style={s.cardNome}>{c.nome}</Text>
-                <Text style={s.cardPerfil}>
-                  {c.perfil} · {fora ? 'Fora do MCMV' : `Faixa ${c.faixa}`} · {pendentes} pendentes
-                </Text>
-                {c.empreendimento ? <Text style={s.cardEmpreendimento}>🏢 {c.empreendimento}</Text> : null}
-                {/* mini barra */}
-                <View style={{ height: 3, backgroundColor: C.verdeClaro, borderRadius: 2, marginTop: 6 }}>
-                  <View style={{ height: 3, backgroundColor: pct === 100 ? C.verdeMedio : C.dourado, borderRadius: 2, width: `${pct}%` as any }} />
+                <Text style={s.cardSub}>{c.perfil} · {getLabelFaixa(c.faixa)} · {pendentes} pendentes</Text>
+                {c.empreendimento ? <Text style={s.cardEmpre}>{c.empreendimento}</Text> : null}
+                <View style={s.miniBarFundo}>
+                  <View style={[s.miniBarFill, { width: `${pct}%` as any, backgroundColor: pct === 100 ? C.verdeMedio : C.dourado }]} />
                 </View>
               </View>
-              <Text style={[s.pct, pct === 100 && { color: C.verdeMedio }, fora && { color: C.erro }]}>
+              <Text style={[s.cardPct, pct === 100 && { color: C.verdeMedio }, fora && { color: C.erro }]}>
                 {fora ? '—' : `${pct}%`}
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={s.btnExcluirCard} onPress={() => onExcluirCliente(c)}>
-              <Text style={s.btnExcluirCardTexto}>🗑</Text>
+            <TouchableOpacity style={s.btnLixeira} onPress={() => onExcluirCliente(c)}>
+              <Text style={{ fontSize: 15, color: C.cinza }}>🗑</Text>
             </TouchableOpacity>
           </View>
         );
@@ -566,91 +537,68 @@ function TelaDashboard({ clientes }: { clientes: Cliente[] }) {
       }, 0) / total * 100)
     : 0;
 
-  const porFaixa = ['1', '2', '3', '4', 'Fora do MCMV'].map(f => ({
-    faixa: f,
-    count: clientes.filter(c => c.faixa === f).length,
-  })).filter(f => f.count > 0);
+  const metricas = [
+    { num: total, label: 'Total de clientes', cor: C.verde },
+    { num: `${mediaPct}%`, label: 'Média geral', cor: C.dourado },
+    { num: prontos, label: 'Prontos p/ envio', cor: C.verdeMedio },
+    { num: pendentes, label: 'Com pendências', cor: C.erro },
+  ];
 
-  const topClientes = [...clientes]
+  const faixas = ['1', '2', '3', '4', 'Fora do MCMV'].map(f => ({
+    label: f === 'Fora do MCMV' ? 'Fora' : `Faixa ${f}`,
+    count: clientes.filter(c => c.faixa === f).length,
+  }));
+  const maxCount = Math.max(1, ...faixas.map(f => f.count));
+
+  const ranking = [...clientes]
     .map(c => {
       const e = c.docs.filter(d => d.entregue).length;
-      const pct = c.docs.length > 0 ? Math.round(e / c.docs.length * 100) : 0;
-      return { ...c, pct };
+      return { ...c, pct: c.docs.length > 0 ? Math.round(e / c.docs.length * 100) : 0 };
     })
     .sort((a, b) => b.pct - a.pct)
     .slice(0, 3);
 
   return (
-    <ScrollView style={s.scroll} contentContainerStyle={{ paddingBottom: 40 }}>
-      <Text style={s.secao}>Resumo</Text>
-
-      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
-        {[
-          { num: total, label: 'Total de clientes' },
-          { num: `${mediaPct}%`, label: 'Média geral' },
-        ].map((item, i) => (
+    <ScrollView style={{ flex: 1, paddingHorizontal: 16, paddingTop: 12 }} contentContainerStyle={{ paddingBottom: 40 }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
+        {metricas.map((m, i) => (
           <View key={i} style={s.statCard}>
-            <Text style={s.statNum}>{item.num}</Text>
-            <Text style={s.statLabel}>{item.label}</Text>
-          </View>
-        ))}
-      </View>
-      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
-        {[
-          { num: prontos, label: 'Prontos p/ envio', cor: C.verdeMedio },
-          { num: pendentes, label: 'Com pendências', cor: C.dourado },
-        ].map((item, i) => (
-          <View key={i} style={s.statCard}>
-            <Text style={[s.statNum, { color: item.cor }]}>{item.num}</Text>
-            <Text style={s.statLabel}>{item.label}</Text>
+            <Text style={[s.statNum, { color: m.cor }]}>{m.num}</Text>
+            <Text style={s.statLabel}>{m.label}</Text>
           </View>
         ))}
       </View>
 
-      {porFaixa.length > 0 && (
-        <>
-          <Text style={s.secao}>Distribuição por faixa</Text>
-          {porFaixa.map(f => (
-            <View key={f.faixa} style={[s.card, { marginBottom: 8, paddingVertical: 10 }]}>
-              <Text style={{ fontSize: 13, color: C.texto, fontWeight: '500' }}>
-                {f.faixa === 'Fora do MCMV' ? 'Fora do MCMV' : `Faixa ${f.faixa}`}
-              </Text>
-              <View style={{ flex: 1, marginHorizontal: 12, height: 4, backgroundColor: C.verdeClaro, borderRadius: 2 }}>
-                <View style={{ height: 4, backgroundColor: C.verde, borderRadius: 2, width: `${Math.round(f.count / total * 100)}%` as any }} />
-              </View>
-              <Text style={{ fontSize: 13, color: C.cinza }}>{f.count}</Text>
+      <View style={s.secaoCard}>
+        <Text style={s.secaoTitulo}>Distribuição por faixa</Text>
+        {faixas.map(f => (
+          <View key={f.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}>
+            <Text style={{ fontSize: 12, color: C.textoSub, width: 50 }}>{f.label}</Text>
+            <View style={{ flex: 1, height: 8, backgroundColor: C.cinzaClaro, borderRadius: 4 }}>
+              <View style={{ height: 8, backgroundColor: C.verde, borderRadius: 4, width: `${(f.count / maxCount) * 100}%` as any }} />
             </View>
-          ))}
-        </>
-      )}
+            <Text style={{ fontSize: 12, fontWeight: '600', color: C.texto, width: 20, textAlign: 'right' }}>{f.count}</Text>
+          </View>
+        ))}
+      </View>
 
-      {topClientes.length > 0 && (
-        <>
-          <Text style={[s.secao, { marginTop: 8 }]}>Mais avançados</Text>
-          {topClientes.map((c, i) => (
-            <View key={c.id} style={[s.card, { marginBottom: 8, paddingVertical: 10 }]}>
-              <Text style={{ fontSize: 13, fontWeight: '600', color: C.dourado, width: 24 }}>{i + 1}°</Text>
-              <View style={s.avatar}>
-                <Text style={s.avatarTexto}>{c.nome.split(' ').map(n => n[0]).slice(0, 2).join('')}</Text>
-              </View>
-              <View style={{ flex: 1, marginLeft: 8 }}>
-                <Text style={s.cardNome}>{c.nome}</Text>
-                <Text style={s.cardPerfil}>{c.empreendimento || c.perfil}</Text>
-              </View>
-              <Text style={[s.pct, c.pct === 100 && { color: C.verdeMedio }]}>{c.pct}%</Text>
+      <View style={[s.secaoCard, { marginTop: 12 }]}>
+        <Text style={s.secaoTitulo}>Mais avançados</Text>
+        {ranking.length === 0 && <Text style={{ color: C.cinza, fontSize: 13, marginTop: 8 }}>Nenhum cliente cadastrado.</Text>}
+        {ranking.map((c, i) => (
+          <View key={c.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: C.dourado, width: 24, textAlign: 'center' }}>{i + 1}</Text>
+            <View style={s.avatar}>
+              <Text style={s.avatarTexto}>{getIniciais(c.nome)}</Text>
             </View>
-          ))}
-        </>
-      )}
-
-      {total === 0 && (
-        <View style={{ alignItems: 'center', marginTop: 60 }}>
-          <Text style={{ fontSize: 32, marginBottom: 12 }}>📊</Text>
-          <Text style={{ color: C.cinza, fontSize: 14, textAlign: 'center' }}>
-            Adicione clientes para ver{'\n'}as métricas aqui.
-          </Text>
-        </View>
-      )}
+            <View style={{ flex: 1, marginLeft: 4 }}>
+              <Text style={s.cardNome}>{c.nome}</Text>
+              <Text style={s.cardSub}>{c.empreendimento || c.perfil}</Text>
+            </View>
+            <Text style={[s.cardPct, c.pct === 100 && { color: C.verdeMedio }]}>{c.pct}%</Text>
+          </View>
+        ))}
+      </View>
     </ScrollView>
   );
 }
@@ -661,14 +609,13 @@ function TelaConfiguracoes({ user }: { user: User }) {
   const [modalSenha, setModalSenha] = useState(false);
   const [erroSenha, setErroSenha] = useState('');
   const [sucessoSenha, setSucessoSenha] = useState(false);
-  const [notifPendencias, setNotifPendencias] = useState(true);
+  const [notif, setNotif] = useState(true);
 
   async function alterarSenha() {
     if (novaSenha.length < 6) { setErroSenha('Mínimo 6 caracteres.'); return; }
     try {
       await updatePassword(user, novaSenha);
-      setSucessoSenha(true);
-      setNovaSenha('');
+      setSucessoSenha(true); setNovaSenha('');
       setTimeout(() => { setModalSenha(false); setSucessoSenha(false); }, 1500);
     } catch { setErroSenha('Erro ao alterar. Faça login novamente.'); }
   }
@@ -676,88 +623,75 @@ function TelaConfiguracoes({ user }: { user: User }) {
   const iniciais = user.email?.slice(0, 2).toUpperCase() || 'JM';
 
   return (
-    <ScrollView style={s.scroll} contentContainerStyle={{ paddingBottom: 40 }}>
-      {/* Perfil */}
-      <View style={s.configPerfilCard}>
-        <View style={[s.avatar, { width: 50, height: 50, borderRadius: 25 }]}>
-          <Text style={[s.avatarTexto, { fontSize: 16 }]}>{iniciais}</Text>
+    <ScrollView style={{ flex: 1, paddingHorizontal: 16, paddingTop: 12 }} contentContainerStyle={{ paddingBottom: 40 }}>
+      <View style={s.configPerfil}>
+        <View style={[s.avatar, { width: 56, height: 56, borderRadius: 28 }]}>
+          <Text style={[s.avatarTexto, { fontSize: 18 }]}>{iniciais}</Text>
         </View>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 15, fontWeight: '600', color: C.texto }}>{user.email}</Text>
-          <View style={s.badgeCor}>
-            <Text style={s.badgeTexto}>Corretor ativo</Text>
+          <View style={s.badgeAtivo}>
+            <Text style={s.badgeAtivoTexto}>Corretor ativo</Text>
           </View>
         </View>
       </View>
 
-      <Text style={s.secao}>Conta</Text>
-      <View style={s.configCard}>
-        <TouchableOpacity style={s.configItem} onPress={() => setModalSenha(true)}>
-          <Text style={s.configItemIcon}>🔒</Text>
-          <View>
-            <Text style={s.configItemLabel}>Alterar senha</Text>
-            <Text style={s.configItemSub}>Mantenha sua conta segura</Text>
-          </View>
-          <Text style={s.configSeta}>›</Text>
+      <Text style={s.secaoLabel}>CONTA</Text>
+      <View style={s.secaoCard}>
+        <TouchableOpacity style={s.configRow} onPress={() => setModalSenha(true)}>
+          <Text style={s.configRowIcon}>🔒</Text>
+          <Text style={s.configRowLabel}>Alterar senha</Text>
+          <Text style={s.configRowSeta}>›</Text>
         </TouchableOpacity>
       </View>
 
-      <Text style={s.secao}>Notificações</Text>
-      <View style={s.configCard}>
-        <View style={s.configItem}>
-          <Text style={s.configItemIcon}>🔔</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={s.configItemLabel}>Lembretes de pendências</Text>
-          </View>
+      <Text style={s.secaoLabel}>NOTIFICAÇÕES</Text>
+      <View style={s.secaoCard}>
+        <View style={s.configRow}>
+          <Text style={s.configRowIcon}>🔔</Text>
+          <Text style={[s.configRowLabel, { flex: 1 }]}>Notificações push</Text>
           <TouchableOpacity
-            style={[s.toggle, notifPendencias ? s.toggleOn : s.toggleOff]}
-            onPress={() => setNotifPendencias(!notifPendencias)}
+            style={[s.toggle, notif ? s.toggleOn : s.toggleOff]}
+            onPress={() => setNotif(!notif)}
           >
-            <View style={s.toggleDot} />
+            <View style={[s.toggleDot, { left: notif ? 22 : 2 }]} />
           </TouchableOpacity>
         </View>
       </View>
 
-      <Text style={s.secao}>Imobiliária</Text>
-      <View style={s.configCard}>
-        <View style={s.configItem}>
-          <Text style={s.configItemIcon}>🏢</Text>
-          <View>
-            <Text style={s.configItemLabel}>Logo da imobiliária</Text>
-            <Text style={s.configItemSub}>Em breve</Text>
+      <Text style={s.secaoLabel}>IMOBILIÁRIA</Text>
+      <View style={s.secaoCard}>
+        <TouchableOpacity style={s.configRow}>
+          <Text style={s.configRowIcon}>🏢</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={s.configRowLabel}>Logo da imobiliária</Text>
+            <Text style={{ fontSize: 11, color: C.cinza }}>Em breve</Text>
           </View>
-          <Text style={s.configSeta}>›</Text>
-        </View>
-        <View style={[s.configItem, { borderBottomWidth: 0 }]}>
-          <Text style={s.configItemIcon}>🎨</Text>
-          <View>
-            <Text style={s.configItemLabel}>Cor da marca</Text>
-            <Text style={s.configItemSub}>Verde Certus (padrão)</Text>
+          <Text style={s.configRowSeta}>›</Text>
+        </TouchableOpacity>
+        <View style={{ height: 1, backgroundColor: C.cinzaBorda }} />
+        <TouchableOpacity style={s.configRow}>
+          <Text style={s.configRowIcon}>🎨</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={s.configRowLabel}>Cor da marca</Text>
+            <Text style={{ fontSize: 11, color: C.cinza }}>Verde Certus (padrão)</Text>
           </View>
-          <Text style={s.configSeta}>›</Text>
-        </View>
+          <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: C.dourado }} />
+        </TouchableOpacity>
       </View>
 
       <TouchableOpacity style={s.btnLogout} onPress={() => signOut(auth)}>
         <Text style={s.btnLogoutTexto}>Sair da conta</Text>
       </TouchableOpacity>
 
-      {/* Modal alterar senha */}
       <Modal visible={modalSenha} animationType="slide" transparent>
         <View style={s.modalFundo}>
           <View style={s.modalBox}>
             <Text style={s.modalTitulo}>Alterar senha</Text>
             <Text style={s.label}>Nova senha</Text>
-            <TextInput
-              style={s.input}
-              placeholder="Mínimo 6 caracteres"
-              value={novaSenha}
-              onChangeText={setNovaSenha}
-              secureTextEntry
-              placeholderTextColor={C.cinza}
-            />
+            <TextInput style={s.input} placeholder="Mínimo 6 caracteres" value={novaSenha} onChangeText={setNovaSenha} secureTextEntry placeholderTextColor={C.cinza} />
             {erroSenha ? <Text style={{ color: C.erro, fontSize: 13, marginTop: 8 }}>{erroSenha}</Text> : null}
-            {sucessoSenha ? <Text style={{ color: C.verdeMedio, fontSize: 13, marginTop: 8 }}>Senha alterada com sucesso!</Text> : null}
+            {sucessoSenha ? <Text style={{ color: C.verdeMedio, fontSize: 13, marginTop: 8 }}>Senha alterada!</Text> : null}
             <View style={s.modalBotoes}>
               <TouchableOpacity style={s.btnCancelar} onPress={() => { setModalSenha(false); setErroSenha(''); }}>
                 <Text style={s.btnCancelarTexto}>Cancelar</Text>
@@ -773,8 +707,6 @@ function TelaConfiguracoes({ user }: { user: User }) {
   );
 }
 
-// ─── TELA CHECKLIST ───────────────────────────────────────────────────────────
-
 // ─── CHECKLIST ────────────────────────────────────────────────────────────────
 function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir }: {
   cliente: Cliente;
@@ -782,137 +714,111 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir }: {
   onAtualizar: (c: Cliente) => void;
   onExcluir: (c: Cliente) => void;
 }) {
+  const [emailModal, setEmailModal] = useState(false);
+  const [emailDestino, setEmailDestino] = useState('');
+  const [enviandoEmail, setEnviandoEmail] = useState(false);
+
   const entregues = cliente.docs.filter(d => d.entregue).length;
   const total = cliente.docs.length;
   const pct = total > 0 ? Math.round((entregues / total) * 100) : 0;
+  const waLink = `https://wa.me/${formatarTelefoneWA(cliente.telefone)}`;
+
+  async function enviarEmail() {
+    if (!emailDestino.trim()) { alert('Digite o e-mail de destino.'); return; }
+    setEnviandoEmail(true);
+    const pendentes = cliente.docs.filter(d => !d.entregue).map(d => `• ${d.nome}`).join('\n');
+    const entreguesLista = cliente.docs.filter(d => d.entregue).map(d => `✓ ${d.nome}`).join('\n');
+    const corpo = `DOCUMENTOS ENTREGUES:\n${entreguesLista || 'Nenhum'}\n\nDOCUMENTOS PENDENTES:\n${pendentes || 'Nenhum'}`;
+    try {
+      const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          service_id: EMAILJS_SERVICE_ID,
+          template_id: EMAILJS_TEMPLATE_ID,
+          user_id: EMAILJS_PUBLIC_KEY,
+          template_params: { to_email: emailDestino, cliente_nome: cliente.nome, empreendimento: cliente.empreendimento || 'Não informado', corpo },
+        }),
+      });
+      if (res.ok) { alert('E-mail enviado com sucesso!'); setEmailModal(false); setEmailDestino(''); }
+      else { alert('Erro ao enviar. Verifique as configurações do EmailJS.'); }
+    } catch { alert('Erro de conexão ao tentar enviar o e-mail.'); }
+    finally { setEnviandoEmail(false); }
+  }
 
   function toggleDoc(id: number) {
-    const novosDocs = cliente.docs.map(d =>
-      d.id === id ? { ...d, entregue: !d.entregue } : d
-    );
+    const novosDocs = cliente.docs.map(d => d.id === id ? { ...d, entregue: !d.entregue } : d);
     onAtualizar({ ...cliente, docs: novosDocs });
   }
 
   function salvarObs(id: number, obs: string) {
-    const novosDocs = cliente.docs.map(d =>
-      d.id === id ? { ...d, observacao: obs } : d
-    );
+    const novosDocs = cliente.docs.map(d => d.id === id ? { ...d, observacao: obs } : d);
     onAtualizar({ ...cliente, docs: novosDocs });
   }
 
-  const waLink = `https://wa.me/${formatarTelefoneWA(cliente.telefone)}`;
-  const EMAILJS_SERVICE_ID = 'service_5kcdmca';
-const EMAILJS_TEMPLATE_ID = 'template_loetntf';
-const EMAILJS_PUBLIC_KEY = 'UTaEmAAnR1rOz-qgQ';
-
-const [emailModal, setEmailModal] = useState(false);
-const [emailDestino, setEmailDestino] = useState('');
-const [enviandoEmail, setEnviandoEmail] = useState(false);
-
-async function enviarEmail() {
-  if (!emailDestino.trim()) { alert('Digite o e-mail de destino.'); return; }
-  setEnviandoEmail(true);
-  const pendentes = cliente.docs.filter(d => !d.entregue).map(d => `• ${d.nome}`).join('\n');
-  const entregues = cliente.docs.filter(d => d.entregue).map(d => `✓ ${d.nome}`).join('\n');
-  const corpo = `DOCUMENTOS ENTREGUES:\n${entregues || 'Nenhum'}\n\nDOCUMENTOS PENDENTES:\n${pendentes || 'Nenhum'}`;
-  try {
-    const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        service_id: EMAILJS_SERVICE_ID,
-        template_id: EMAILJS_TEMPLATE_ID,
-        user_id: EMAILJS_PUBLIC_KEY,
-        template_params: {
-          to_email: emailDestino,
-          cliente_nome: cliente.nome,
-          empreendimento: cliente.empreendimento || 'Não informado',
-          corpo,
-        },
-      }),
-    });
-    if (res.ok) { alert('E-mail enviado com sucesso!'); setEmailModal(false); setEmailDestino(''); }
-    else { alert('Erro ao enviar. Verifique as configurações do EmailJS.'); }
-  } catch { alert('Erro de conexão ao tentar enviar o e-mail.'); }
-  finally { setEnviandoEmail(false); }
-}
-
   return (
     <View style={s.container}>
-      {/* Header checklist */}
       <View style={s.header}>
-        <TouchableOpacity onPress={voltar} style={s.btnVoltar}>
-          <Text style={s.btnVoltarTexto}>‹ Voltar</Text>
+        <TouchableOpacity onPress={voltar} style={{ marginBottom: 6 }}>
+          <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 14 }}>‹ Voltar</Text>
         </TouchableOpacity>
-        <Text style={s.checklistNome}>{cliente.nome}</Text>
-        <Text style={s.checklistSub}>
-          {cliente.perfil} · {cliente.faixa === 'Fora do MCMV' ? 'Fora do MCMV' : `Faixa ${cliente.faixa}`}
-          {cliente.empreendimento ? ` · ${cliente.empreendimento}` : ''}
+        <Text style={{ fontSize: 18, fontWeight: '700', color: '#fff', textAlign: 'center' }}>{cliente.nome}</Text>
+        <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', textAlign: 'center', marginTop: 2 }}>
+          {cliente.perfil} · {getLabelFaixa(cliente.faixa)}{cliente.empreendimento ? ` · ${cliente.empreendimento}` : ''}
         </Text>
-        {/* Barra de progresso */}
-        <View style={s.progressoBox}>
-          <View style={s.progressoBarFundo}>
-            <View style={[s.progressoBarFill, { width: `${pct}%` as any, backgroundColor: pct === 100 ? C.verdeMedio : C.dourado }]} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 }}>
+          <View style={{ flex: 1, height: 6, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 3 }}>
+            <View style={{ height: 6, borderRadius: 3, backgroundColor: pct === 100 ? C.verdeMedio : C.dourado, width: `${pct}%` as any }} />
           </View>
-          <Text style={s.progressoPct}>{pct}%</Text>
+          <Text style={{ fontSize: 14, fontWeight: '700', color: C.dourado }}>{pct}%</Text>
         </View>
-        <Text style={s.progressoContador}>{entregues} de {total} documentos entregues</Text>
+        <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', textAlign: 'center', marginTop: 4 }}>
+          {entregues} de {total} documentos entregues
+        </Text>
       </View>
 
-      <ScrollView style={s.scroll} contentContainerStyle={{ paddingBottom: 120 }}>
+      <ScrollView style={{ flex: 1, paddingHorizontal: 16, paddingTop: 12 }} contentContainerStyle={{ paddingBottom: 120 }}>
         {cliente.docs.map(doc => (
           <DocItem key={doc.id} doc={doc} onToggle={toggleDoc} onSalvarObs={salvarObs} />
         ))}
 
-        {/* Ações */}
         <View style={{ marginTop: 16, gap: 10 }}>
           {cliente.telefone ? (
             <TouchableOpacity style={s.btnWA} onPress={() => Linking.openURL(waLink)}>
               <Text style={s.btnWATexto}>📱 Abrir WhatsApp</Text>
             </TouchableOpacity>
           ) : null}
-            <TouchableOpacity style={[s.btnWA, { backgroundColor: C.verde, marginTop: 10 }]} onPress={() => setEmailModal(true)}>
-  <Text style={s.btnWATexto}>✉️ Enviar por E-mail</Text>
-</TouchableOpacity>
-
-<Modal visible={emailModal} animationType="slide" transparent>
-  <View style={s.modalFundo}>
-    <View style={s.modalBox}>
-      <Text style={s.modalTitulo}>Enviar checklist</Text>
-      <Text style={s.label}>E-mail de destino</Text>
-      <TextInput
-        style={s.input}
-        placeholder="cliente@exemplo.com"
-        value={emailDestino}
-        onChangeText={setEmailDestino}
-        keyboardType="email-address"
-        autoCapitalize="none"
-        placeholderTextColor={C.cinza}
-      />
-      <View style={s.modalBotoes}>
-        <TouchableOpacity style={s.btnCancelar} onPress={() => setEmailModal(false)}>
-          <Text style={s.btnCancelarTexto}>Cancelar</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[s.btnSalvar, enviandoEmail && { opacity: 0.6 }]} onPress={enviarEmail} disabled={enviandoEmail}>
-          <Text style={s.btnSalvarTexto}>{enviandoEmail ? 'Enviando...' : 'Enviar'}</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  </View>
-</Modal>
-          <TouchableOpacity
-            style={[s.btnSalvar, { backgroundColor: C.erro, marginHorizontal: 0 }]}
-            onPress={() => onExcluir(cliente)}
-          >
-            <Text style={s.btnSalvarTexto}>🗑 Excluir cliente</Text>
+          <TouchableOpacity style={s.btnEmail} onPress={() => setEmailModal(true)}>
+            <Text style={s.btnEmailTexto}>✉️ Enviar por E-mail</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.btnExcluir} onPress={() => onExcluir(cliente)}>
+            <Text style={s.btnExcluirTexto}>🗑 Excluir cliente</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <Modal visible={emailModal} animationType="slide" transparent>
+        <View style={s.modalFundo}>
+          <View style={s.modalBox}>
+            <Text style={s.modalTitulo}>Enviar checklist</Text>
+            <Text style={s.label}>E-mail de destino</Text>
+            <TextInput style={s.input} placeholder="cliente@exemplo.com" value={emailDestino} onChangeText={setEmailDestino} keyboardType="email-address" autoCapitalize="none" placeholderTextColor={C.cinza} />
+            <View style={s.modalBotoes}>
+              <TouchableOpacity style={s.btnCancelar} onPress={() => setEmailModal(false)}>
+                <Text style={s.btnCancelarTexto}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[s.btnSalvar, enviandoEmail && { opacity: 0.6 }]} onPress={enviarEmail} disabled={enviandoEmail}>
+                <Text style={s.btnSalvarTexto}>{enviandoEmail ? 'Enviando...' : 'Enviar'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
-// ─── ITEM DE DOCUMENTO ────────────────────────────────────────────────────────
+// ─── DOC ITEM ─────────────────────────────────────────────────────────────────
 function DocItem({ doc, onToggle, onSalvarObs }: {
   doc: Documento;
   onToggle: (id: number) => void;
@@ -920,13 +826,14 @@ function DocItem({ doc, onToggle, onSalvarObs }: {
 }) {
   const [expandido, setExpandido] = useState(false);
   const [obs, setObs] = useState(doc.observacao || '');
+  const [salvo, setSalvo] = useState(false);
 
   return (
     <View style={[s.docCard, doc.entregue && s.docCardEntregue]}>
-      <TouchableOpacity style={s.docRow} onPress={() => setExpandido(!expandido)}>
+      <TouchableOpacity style={s.docRow} onPress={() => setExpandido(!expandido)} activeOpacity={0.7}>
         <TouchableOpacity style={s.checkbox} onPress={() => onToggle(doc.id)}>
-          <View style={[s.checkboxBox, doc.entregue && s.checkboxBoxAtivo]}>
-            {doc.entregue && <Text style={s.checkboxCheck}>✓</Text>}
+          <View style={[s.checkboxBox, doc.entregue && s.checkboxAtivo]}>
+            {doc.entregue && <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>✓</Text>}
           </View>
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
@@ -938,23 +845,18 @@ function DocItem({ doc, onToggle, onSalvarObs }: {
             <Text style={s.badgePendenteTexto}>Pendente</Text>
           </View>
         )}
-        <Text style={s.expandIcon}>{expandido ? '▲' : '▼'}</Text>
+        <Text style={{ fontSize: 11, color: C.cinza, marginLeft: 6 }}>{expandido ? '▲' : '▼'}</Text>
       </TouchableOpacity>
 
       {expandido && (
         <View style={s.obsBox}>
-          <Text style={s.obsLabel}>Observação</Text>
-          <TextInput
-            style={s.obsInput}
-            placeholder="Ex: Cliente vai enviar na segunda-feira"
-            value={obs}
-            onChangeText={setObs}
-            multiline
-            placeholderTextColor={C.cinza}
-          />
-          <TouchableOpacity style={s.obsSalvar} onPress={() => onSalvarObs(doc.id, obs)}>
-            <Text style={s.obsSalvarTexto}>Salvar observação</Text>
-          </TouchableOpacity>
+          <TextInput style={s.obsInput} placeholder="Adicione uma observação..." value={obs} onChangeText={t => { setObs(t); setSalvo(false); }} multiline placeholderTextColor={C.cinza} />
+          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginTop: 8, gap: 10 }}>
+            {salvo && <Text style={{ fontSize: 12, color: C.verdeMedio }}>Salvo</Text>}
+            <TouchableOpacity style={s.obsSalvar} onPress={() => { onSalvarObs(doc.id, obs); setSalvo(true); }}>
+              <Text style={s.obsSalvarTexto}>Salvar</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
     </View>
@@ -966,169 +868,130 @@ const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bege },
 
   // LOGIN
-  loginContainer: { flex: 1, backgroundColor: C.verde },
-  loginTopo: { alignItems: 'center', paddingTop: 80, paddingBottom: 40 },
-  loginLogoBox: {
-    width: 64, height: 64, borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    alignItems: 'center', justifyContent: 'center', marginBottom: 14,
-  },
-  loginLogoIcon: { fontSize: 32, color: C.dourado },
-  loginNomeApp: { fontSize: 32, fontWeight: '700', color: '#fff', letterSpacing: 1 },
-  loginTagline: { fontSize: 13, color: 'rgba(255,255,255,0.65)', marginTop: 4 },
-  loginCard: {
-    backgroundColor: '#fff', marginHorizontal: 24, borderRadius: 20,
-    padding: 24, shadowColor: '#000', shadowOpacity: 0.12,
-    shadowRadius: 16, elevation: 8,
-  },
-  loginCardTitulo: { fontSize: 20, fontWeight: '700', color: C.texto, marginBottom: 4 },
-  loginCardSub: { fontSize: 13, color: C.cinza, marginBottom: 20 },
-  loginBotao: {
-    backgroundColor: C.verde, borderRadius: 12,
-    paddingVertical: 14, alignItems: 'center', marginTop: 16,
-  },
+  loginBg: { flex: 1, backgroundColor: C.verde, paddingHorizontal: 20 },
+  loginTopo: { alignItems: 'center', paddingTop: Platform.OS === 'ios' ? 80 : 60, paddingBottom: 32 },
+  loginLogoBox: { width: 72, height: 72, borderRadius: 22, backgroundColor: 'rgba(201,168,76,0.15)', borderWidth: 1, borderColor: 'rgba(201,168,76,0.3)', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  loginLogoCheck: { fontSize: 34, color: C.dourado },
+  loginNome: { fontSize: 36, fontWeight: '700', color: '#fff', letterSpacing: 0.5 },
+  loginTagline: { fontSize: 13, color: 'rgba(255,255,255,0.55)', marginTop: 6 },
+  loginCard: { backgroundColor: '#fff', borderRadius: 24, padding: 24, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 20, elevation: 10, maxWidth: 420, alignSelf: 'center', width: '100%' },
+  loginCardTitulo: { fontSize: 22, fontWeight: '700', color: C.texto },
+  loginCardSub: { fontSize: 13, color: C.cinza, marginTop: 4, marginBottom: 8 },
+  loginBotao: { backgroundColor: C.verde, borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginTop: 18 },
   loginBotaoTexto: { color: '#fff', fontWeight: '700', fontSize: 15 },
   loginErro: { color: C.erro, fontSize: 13, marginTop: 8, textAlign: 'center' },
-  loginRodape: { color: 'rgba(255,255,255,0.35)', fontSize: 11, textAlign: 'center', marginTop: 24 },
+  loginRodape: { color: 'rgba(255,255,255,0.25)', fontSize: 11, textAlign: 'center', marginTop: 24, paddingBottom: 24 },
 
   // HEADER
   header: { backgroundColor: C.verde, paddingTop: Platform.OS === 'ios' ? 56 : 36, paddingBottom: 16, paddingHorizontal: 20 },
-  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  logoMark: { width: 34, height: 34, borderRadius: 10, backgroundColor: 'rgba(201,168,76,0.25)', alignItems: 'center', justifyContent: 'center' },
-  logoIcon: { fontSize: 18, color: C.dourado },
-  headerTitulo: { fontSize: 20, fontWeight: '700', color: '#fff' },
-  headerSub: { fontSize: 11, color: 'rgba(255,255,255,0.55)' },
-  progressoGeral: { marginTop: 4 },
-  progressoLabel: { fontSize: 13, color: 'rgba(255,255,255,0.8)', fontWeight: '500' },
-  progressoMedia: { fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2 },
+  headerLogo: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  logoBox: { width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(201,168,76,0.2)', borderWidth: 1, borderColor: 'rgba(201,168,76,0.35)', alignItems: 'center', justifyContent: 'center' },
+  logoCheck: { fontSize: 16, color: C.dourado },
+  headerNome: { fontSize: 22, fontWeight: '700', color: '#fff' },
+  headerSub: { fontSize: 12, color: 'rgba(255,255,255,0.55)', textAlign: 'center', marginTop: 2 },
+  headerStats: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 14, backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 16, paddingVertical: 12, paddingHorizontal: 24, gap: 24 },
+  headerStatItem: { alignItems: 'center' },
+  headerStatNum: { fontSize: 20, fontWeight: '700', color: '#fff' },
+  headerStatLabel: { fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 2 },
+  headerDivider: { width: 1, height: 32, backgroundColor: 'rgba(255,255,255,0.15)' },
 
   // NAVBAR
-  navbar: {
-    flexDirection: 'row', backgroundColor: '#fff',
-    borderTopWidth: 1, borderTopColor: '#E8E4DE',
-    paddingBottom: Platform.OS === 'ios' ? 24 : 8, paddingTop: 8,
-  },
+  navbar: { flexDirection: 'row', backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: C.cinzaBorda, paddingBottom: Platform.OS === 'ios' ? 24 : 8, paddingTop: 8 },
   navItem: { flex: 1, alignItems: 'center', gap: 2 },
-  navIcon: { fontSize: 20 },
-  navIconAtivo: {},
-  navLabel: { fontSize: 10, color: C.cinza },
+  navIcone: { fontSize: 20 },
+  navLabel: { fontSize: 11, color: C.cinza },
   navLabelAtivo: { color: C.verde, fontWeight: '600' },
-  navDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: C.dourado, marginTop: 2 },
+  navDot: { width: 4, height: 4, borderRadius: 2, marginTop: 2 },
 
   // FAB
-  fab: {
-    position: 'absolute', bottom: Platform.OS === 'ios' ? 90 : 70,
-    right: 20, width: 52, height: 52, borderRadius: 26,
-    backgroundColor: C.verde, alignItems: 'center', justifyContent: 'center',
-    shadowColor: C.verde, shadowOpacity: 0.4, shadowRadius: 8, elevation: 6,
-  },
-  fabIcon: { fontSize: 28, color: C.dourado, lineHeight: 32 },
+  fab: { position: 'absolute', bottom: Platform.OS === 'ios' ? 90 : 70, right: 20, width: 56, height: 56, borderRadius: 28, backgroundColor: C.verde, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, elevation: 6 },
+  fabIcon: { fontSize: 30, color: C.dourado, lineHeight: 34 },
 
-  // SCROLL / SEÇÃO
-  scroll: { flex: 1, paddingHorizontal: 16, paddingTop: 12 },
-  secao: { fontSize: 11, fontWeight: '700', color: C.cinza, letterSpacing: 0.8, marginBottom: 8, marginTop: 4, textTransform: 'uppercase' },
-
-  // CARDS
+  // CARDS CLIENTES
   cardWrapper: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  card: {
-    flex: 1, flexDirection: 'row', alignItems: 'center',
-    backgroundColor: C.begeCard, borderRadius: 14,
-    padding: 14, shadowColor: '#000', shadowOpacity: 0.05,
-    shadowRadius: 6, elevation: 2,
-  },
-  cardInfo: { flex: 1, marginLeft: 12 },
+  card: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 20, padding: 14, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 },
   cardNome: { fontSize: 14, fontWeight: '600', color: C.texto },
-  cardPerfil: { fontSize: 12, color: C.cinza, marginTop: 2 },
-  cardEmpreendimento: { fontSize: 11, color: C.textoSub, marginTop: 2 },
-  pct: { fontSize: 13, fontWeight: '700', color: C.dourado, marginLeft: 8 },
-  btnExcluirCard: { padding: 10, marginLeft: 6 },
-  btnExcluirCardTexto: { fontSize: 16 },
+  cardSub: { fontSize: 12, color: C.cinza, marginTop: 2 },
+  cardEmpre: { fontSize: 11, color: C.textoSub, marginTop: 2 },
+  cardPct: { fontSize: 15, fontWeight: '700', color: C.dourado, marginLeft: 8 },
+  miniBarFundo: { height: 3, backgroundColor: '#F0EDE8', borderRadius: 2, marginTop: 6 },
+  miniBarFill: { height: 3, borderRadius: 2 },
+  btnLixeira: { padding: 10, marginLeft: 4 },
 
   // AVATAR
-  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.verde, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.verde, alignItems: 'center', justifyContent: 'center' },
   avatarTexto: { color: C.dourado, fontWeight: '700', fontSize: 14 },
 
   // FORMULÁRIO
-  label: { fontSize: 12, fontWeight: '600', color: C.textoSub, marginBottom: 4, marginTop: 12 },
-  input: {
-    backgroundColor: C.cinzaClaro, borderRadius: 10, padding: 12,
-    fontSize: 14, color: C.texto, borderWidth: 1, borderColor: 'transparent',
-  },
-  opcoes: { flexDirection: 'row', gap: 8, marginTop: 4 },
-  opcao: { flex: 1, paddingVertical: 10, borderRadius: 10, backgroundColor: C.cinzaClaro, alignItems: 'center' },
-  opcaoAtiva: { backgroundColor: C.verde },
-  opcaoTexto: { fontSize: 12, color: C.textoSub, fontWeight: '500' },
-  opcaoTextoAtivo: { color: '#fff', fontWeight: '700' },
-  faixaBox: { borderRadius: 8, padding: 10, marginTop: 8 },
-  faixaBoxOk: { backgroundColor: C.verdeClaro },
-  faixaBoxErro: { backgroundColor: C.erroClaro },
-  faixaTexto: { fontSize: 12, fontWeight: '500' },
-  faixaTextoOk: { color: C.verdeMedio },
-  faixaTextoErro: { color: C.erro },
+  label: { fontSize: 12, fontWeight: '600', color: C.textoSub, marginBottom: 5, marginTop: 14 },
+  input: { backgroundColor: C.cinzaClaro, borderRadius: 12, padding: 13, fontSize: 14, color: C.texto },
 
   // MODAL
   modalFundo: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  modalBox: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
-  modalTitulo: { fontSize: 18, fontWeight: '700', color: C.texto, marginBottom: 4 },
+  modalBox: { backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 40 },
+  modalAlca: { width: 40, height: 5, borderRadius: 3, backgroundColor: C.cinzaBorda, alignSelf: 'center', marginBottom: 16 },
+  modalTitulo: { fontSize: 20, fontWeight: '700', color: C.texto },
+  modalFechar: { width: 32, height: 32, borderRadius: 16, backgroundColor: C.cinzaClaro, alignItems: 'center', justifyContent: 'center' },
   modalBotoes: { flexDirection: 'row', gap: 10, marginTop: 20 },
-  btnCancelar: { flex: 1, paddingVertical: 13, borderRadius: 12, backgroundColor: C.cinzaClaro, alignItems: 'center' },
-  btnCancelarTexto: { color: C.textoSub, fontWeight: '600' },
-  btnSalvar: { flex: 1, paddingVertical: 13, borderRadius: 12, backgroundColor: C.verde, alignItems: 'center' },
-  btnSalvarTexto: { color: '#fff', fontWeight: '700' },
+  btnCancelar: { flex: 1, paddingVertical: 14, borderRadius: 14, backgroundColor: C.cinzaClaro, alignItems: 'center' },
+  btnCancelarTexto: { color: C.textoSub, fontWeight: '600', fontSize: 14 },
+  btnSalvar: { flex: 1, paddingVertical: 14, borderRadius: 14, backgroundColor: C.verde, alignItems: 'center' },
+  btnSalvarTexto: { color: '#fff', fontWeight: '700', fontSize: 14 },
+
+  // PERFIL / FAIXA
+  opcoes: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  opcao: { flex: 1, paddingVertical: 11, borderRadius: 12, backgroundColor: C.cinzaClaro, alignItems: 'center' },
+  opcaoAtiva: { backgroundColor: C.verde },
+  opcaoTexto: { fontSize: 12, color: C.textoSub, fontWeight: '500' },
+  opcaoTextoAtivo: { color: '#fff', fontWeight: '700' },
+  faixaBox: { borderRadius: 10, padding: 10, marginTop: 8 },
+  faixaBoxOk: { backgroundColor: C.verdeClaro },
+  faixaBoxErro: { backgroundColor: C.erroClaro },
+  faixaTexto: { fontSize: 12, fontWeight: '500' },
+
+  // DASHBOARD
+  statCard: { width: '48%', backgroundColor: '#fff', borderRadius: 20, padding: 16, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
+  statNum: { fontSize: 28, fontWeight: '700' },
+  statLabel: { fontSize: 11, color: C.cinza, marginTop: 4 },
+  secaoCard: { backgroundColor: '#fff', borderRadius: 20, padding: 16, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
+  secaoTitulo: { fontSize: 14, fontWeight: '700', color: C.texto },
+
+  // CONFIGURAÇÕES
+  configPerfil: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#fff', borderRadius: 20, padding: 16, marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
+  secaoLabel: { fontSize: 11, fontWeight: '700', color: C.cinza, letterSpacing: 0.8, marginBottom: 6, marginTop: 4 },
+  configRow: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 },
+  configRowIcon: { fontSize: 18 },
+  configRowLabel: { fontSize: 14, color: C.texto, fontWeight: '500' },
+  configRowSeta: { fontSize: 20, color: C.cinza, marginLeft: 'auto' },
+  badgeAtivo: { backgroundColor: C.verdeClaro, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start', marginTop: 4 },
+  badgeAtivoTexto: { fontSize: 11, color: C.verdeMedio, fontWeight: '600' },
+  toggle: { width: 46, height: 26, borderRadius: 13, justifyContent: 'center' },
+  toggleOn: { backgroundColor: C.verdeMedio },
+  toggleOff: { backgroundColor: C.cinzaClaro },
+  toggleDot: { position: 'absolute', width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 2, elevation: 2 },
+  btnLogout: { borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: C.erroClaro, marginTop: 16, flexDirection: 'row', justifyContent: 'center', gap: 8 },
+  btnLogoutTexto: { color: C.erro, fontWeight: '700', fontSize: 14 },
 
   // CHECKLIST
-  btnVoltar: { marginBottom: 8 },
-  btnVoltarTexto: { color: 'rgba(255,255,255,0.75)', fontSize: 14 },
-  checklistNome: { fontSize: 18, fontWeight: '700', color: '#fff' },
-  checklistSub: { fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 },
-  progressoBox: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
-  progressoBarFundo: { flex: 1, height: 6, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 3 },
-  progressoBarFill: { height: 6, borderRadius: 3 },
-  progressoPct: { fontSize: 14, fontWeight: '700', color: C.dourado, width: 36, textAlign: 'right' },
-  progressoContador: { fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 4 },
-
-  // DOC ITEM
-  docCard: { backgroundColor: '#fff', borderRadius: 14, marginBottom: 10, overflow: 'hidden', borderWidth: 1, borderColor: '#EDE9E3' },
+  docCard: { backgroundColor: '#fff', borderRadius: 20, marginBottom: 10, overflow: 'hidden', borderWidth: 1, borderColor: C.cinzaBorda },
   docCardEntregue: { borderColor: C.verdeClaro, backgroundColor: '#F7FBF9' },
   docRow: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 10 },
   docNome: { fontSize: 13, fontWeight: '600', color: C.texto },
   docNomeEntregue: { color: C.verdeMedio, textDecorationLine: 'line-through' },
   docSub: { fontSize: 11, color: C.cinza, marginTop: 2 },
   checkbox: { padding: 2 },
-  checkboxBox: { width: 24, height: 24, borderRadius: 8, borderWidth: 2, borderColor: C.cinza, alignItems: 'center', justifyContent: 'center' },
-  checkboxBoxAtivo: { backgroundColor: C.verdeMedio, borderColor: C.verdeMedio },
-  checkboxCheck: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  badgePendente: { backgroundColor: '#FFF3E0', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
+  checkboxBox: { width: 24, height: 24, borderRadius: 8, borderWidth: 2, borderColor: C.cinzaBorda, alignItems: 'center', justifyContent: 'center' },
+  checkboxAtivo: { backgroundColor: C.verdeMedio, borderColor: C.verdeMedio },
+  badgePendente: { backgroundColor: '#FFF3E0', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   badgePendenteTexto: { fontSize: 10, color: '#E65100', fontWeight: '600' },
-  expandIcon: { fontSize: 10, color: C.cinza, marginLeft: 4 },
-  obsBox: { borderTopWidth: 1, borderTopColor: '#F0EDE8', padding: 14 },
-  obsLabel: { fontSize: 11, fontWeight: '600', color: C.cinza, marginBottom: 6 },
-  obsInput: { backgroundColor: C.cinzaClaro, borderRadius: 8, padding: 10, fontSize: 13, color: C.texto, minHeight: 60 },
-  obsSalvar: { marginTop: 8, alignSelf: 'flex-end', backgroundColor: C.verde, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 7 },
+  obsBox: { borderTopWidth: 1, borderTopColor: C.cinzaBorda, padding: 14 },
+  obsInput: { backgroundColor: C.cinzaClaro, borderRadius: 10, padding: 10, fontSize: 13, color: C.texto, minHeight: 60 },
+  obsSalvar: { backgroundColor: C.verde, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 7 },
   obsSalvarTexto: { color: '#fff', fontSize: 12, fontWeight: '600' },
-
-  // DASHBOARD
-  statCard: { flex: 1, backgroundColor: '#fff', borderRadius: 14, padding: 16, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
-  statNum: { fontSize: 28, fontWeight: '700', color: C.verde },
-  statLabel: { fontSize: 11, color: C.cinza, marginTop: 4, textAlign: 'center' },
-
-  // CONFIGURAÇÕES
-  configPerfilCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#fff', borderRadius: 14, padding: 16, marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
-  configCard: { backgroundColor: '#fff', borderRadius: 14, overflow: 'hidden', marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
-  configItem: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12, borderBottomWidth: 1, borderBottomColor: '#F5F0E8' },
-  configItemIcon: { fontSize: 20 },
-  configItemLabel: { fontSize: 14, fontWeight: '500', color: C.texto },
-  configItemSub: { fontSize: 11, color: C.cinza, marginTop: 2 },
-  configSeta: { fontSize: 20, color: C.cinza, marginLeft: 'auto' },
-  toggle: { width: 44, height: 26, borderRadius: 13, justifyContent: 'center', paddingHorizontal: 2 },
-  toggleOn: { backgroundColor: C.verdeMedio },
-  toggleOff: { backgroundColor: C.cinzaClaro },
-  toggleDot: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff' },
-  badgeCor: { backgroundColor: C.verdeClaro, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start', marginTop: 4 },
-  badgeTexto: { fontSize: 11, color: C.verdeMedio, fontWeight: '600' },
-  btnLogout: { borderRadius: 12, paddingVertical: 14, alignItems: 'center', backgroundColor: C.erroClaro, marginTop: 8 },
-  btnLogoutTexto: { color: C.erro, fontWeight: '700', fontSize: 14 },
-  btnWA: { backgroundColor: '#25D366', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  btnWA: { backgroundColor: C.wa, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   btnWATexto: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  btnEmail: { backgroundColor: C.verde, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  btnEmailTexto: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  btnExcluir: { backgroundColor: C.erroClaro, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  btnExcluirTexto: { color: C.erro, fontWeight: '700', fontSize: 14 },
 });
