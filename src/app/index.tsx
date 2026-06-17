@@ -1324,6 +1324,47 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
     setStatusModal(false);
   }
 
+  function abrirAnexos() {
+    const docsComAnexo = cliente.docs.filter(d => d.arquivoBase64 && d.arquivoNome);
+    if (docsComAnexo.length === 0) {
+      alert('Nenhum documento anexado ainda.');
+      return;
+    }
+    docsComAnexo.forEach(d => {
+      const tipo = d.arquivoTipo || 'application/octet-stream';
+      const url = `data:${tipo};base64,${d.arquivoBase64}`;
+      const janela = window.open('', '_blank');
+      if (janela) {
+        janela.document.write(`
+          <html>
+            <head>
+              <title>${d.nome} — ${cliente.nome}</title>
+              <style>
+                body { margin: 0; background: #111; display: flex; flex-direction: column; align-items: center; min-height: 100vh; font-family: sans-serif; }
+                h2 { color: #C9A84C; margin: 20px 0 8px; font-size: 16px; }
+                p { color: #888; font-size: 13px; margin: 0 0 16px; }
+                img { max-width: 100%; max-height: 80vh; border-radius: 8px; box-shadow: 0 4px 24px rgba(0,0,0,0.5); }
+                iframe { width: 100vw; height: 88vh; border: none; }
+                .btn { margin-top: 16px; margin-bottom: 24px; background: #C9A84C; color: #1A3C34; border: none; padding: 10px 28px; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+                .btn:hover { opacity: 0.85; }
+              </style>
+            </head>
+            <body>
+              <h2>${d.nome}</h2>
+              <p>${cliente.nome} · ${cliente.empreendimento || cliente.perfil}</p>
+              ${tipo.startsWith('image/')
+                ? `<img src="${url}" />`
+                : `<iframe src="${url}"></iframe>`
+              }
+              <button class="btn" onclick="window.print()">🖨️ Salvar como PDF / Imprimir</button>
+            </body>
+          </html>
+        `);
+        janela.document.close();
+      }
+    });
+  }
+
   return (
     <View style={s.container}>
       <View style={s.header}>
@@ -1379,6 +1420,14 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
           <TouchableOpacity style={s.btnEmail} onPress={() => setEmailModal(true)}>
             <Text style={s.btnEmailTexto}>✉️ Enviar por E-mail</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.btnEmail, { backgroundColor: C.verdeClaro, borderColor: C.verdeMedio, borderWidth: 1 }]}
+            onPress={abrirAnexos}
+          >
+            <Text style={[s.btnEmailTexto, { color: C.verdeMedio }]}>
+              📄 Ver documentos anexados ({cliente.docs.filter(d => d.arquivoBase64).length})
+            </Text>
+          </TouchableOpacity>
           <TouchableOpacity style={s.btnExcluir} onPress={() => onExcluir(cliente)}>
             <Text style={s.btnExcluirTexto}>🗑 Excluir cliente</Text>
           </TouchableOpacity>
@@ -1395,6 +1444,19 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
                 Enviando como: <Text style={{ color: C.verde, fontWeight: '600' }}>{userEmail}</Text>
               </Text>
             )}
+            {(() => {
+              const anexados = cliente.docs.filter(d => d.arquivoBase64).length;
+              return anexados > 0 ? (
+                <View style={{ backgroundColor: C.verdeClaro, borderRadius: 8, padding: 10, marginBottom: 12 }}>
+                  <Text style={{ fontSize: 12, color: C.verdeMedio, fontWeight: '600' }}>
+                    📎 {anexados} documento{anexados > 1 ? 's' : ''} anexado{anexados > 1 ? 's' : ''}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: C.cinza, marginTop: 3 }}>
+                    Após enviar o e-mail, use "Ver documentos anexados" para abrir e encaminhar os arquivos.
+                  </Text>
+                </View>
+              ) : null;
+            })()}
             <Text style={s.label}>E-mail de destino</Text>
             <TextInput style={s.input} placeholder="cliente@exemplo.com" value={emailDestino} onChangeText={setEmailDestino} keyboardType="email-address" autoCapitalize="none" placeholderTextColor={C.cinza} />
             <View style={s.modalBotoes}>
