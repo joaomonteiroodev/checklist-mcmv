@@ -19,6 +19,7 @@ import {
 } from 'firebase/firestore';
 import { useEffect, useRef, useState } from 'react';
 import {
+  Image,
   Linking,
   Modal,
   Platform,
@@ -274,9 +275,10 @@ function LoginScreen() {
   return (
     <ScrollView style={s.loginBg} contentContainerStyle={{ paddingBottom: 40 }}>
       <View style={s.loginTopo}>
-        <View style={s.loginLogoBox}>
-          <Text style={s.loginLogoCheck}>✓</Text>
-        </View>
+        <Image
+          source={require('../../assets/images/icon.png')}
+          style={{ width: 72, height: 72, borderRadius: 22 }}
+        />
         <Text style={s.loginNome}>Certus</Text>
         <Text style={s.loginTagline}>Documentação MCMV simplificada</Text>
       </View>
@@ -500,7 +502,9 @@ function AppPrincipal({ user }: { user: User }) {
       {/* HEADER */}
       <View style={s.header}>
         <View style={s.headerLogo}>
-          <View style={s.logoBox}><Text style={s.logoCheck}>✓</Text></View>
+          <View style={s.logoBox}>
+            <Text style={s.logoCheck}>✓</Text>
+          </View>
           <Text style={s.headerNome}>Certus</Text>
           {userRole === 'gestor' && (
             <View style={{ backgroundColor: C.dourado, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2, marginLeft: 6 }}>
