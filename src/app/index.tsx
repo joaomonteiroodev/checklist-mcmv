@@ -405,6 +405,7 @@ function AppPrincipal({ user }: { user: User }) {
   }, [user.uid, userRole, userGestorId]);
 
   useEffect(() => {
+    const q = query(collection(db, 'usuarios'), where('uid', '==', user.uid));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       if (!snapshot.empty) {
         const docSnap = snapshot.docs[0];
@@ -414,10 +415,8 @@ function AppPrincipal({ user }: { user: User }) {
         setUserGestorId(data.gestorId || null);
         const nome = data.nomeCompleto || data.nome || '';
         setUserNomeCompleto(nome);
-        // Usuário antigo sem nome: pede para completar
         setPerfilIncompleto(!nome.trim());
       } else {
-        // Usuário novo sem documento no Firestore (criado antes dessa versão)
         setPerfilIncompleto(true);
       }
     });
