@@ -66,6 +66,7 @@ interface Documento {
   arquivoBase64?: string;
   arquivoNome?: string;
   arquivoTipo?: string;
+  arquivoData?: number;
 }
 
 interface Cliente {
@@ -370,6 +371,7 @@ function AppPrincipal({ user }: { user: User }) {
   const [busca, setBusca] = useState('');
   const [filtroFaixa, setFiltroFaixa] = useState<string>('Todas');
   const [filtroStatus, setFiltroStatus] = useState<string>('Todos');
+  const [filtroCorretor, setFiltroCorretor] = useState<string>('Todos');
   const [novoNome, setNovoNome] = useState('');
   const [novoTelefone, setNovoTelefone] = useState('');
   const [novoEmailCliente, setNovoEmailCliente] = useState('');
@@ -377,11 +379,32 @@ function AppPrincipal({ user }: { user: User }) {
   const [novaRenda, setNovaRenda] = useState('');
   const [novoEmpreendimento, setNovoEmpreendimento] = useState('');
   const [modalExcluirCliente, setModalExcluirCliente] = useState<Cliente | null>(null);
+  const [membrosEquipe, setMembrosEquipe] = useState<any[]>([]);
 
   const faixaPreview = novaRenda ? calcularFaixa(parseFloat(novaRenda.replace(',', '.'))) : null;
 
+  // Busca membros da equipe
   useEffect(() => {
-    const q = query(collection(db, 'usuarios'), where('uid', '==', user.uid));
+    if (!userRole) return;
+    let q;
+    if (userRole === 'gestor') {
+      // Gestor vê todos os corretores vinculados a ele
+      q = query(collection(db, 'usuarios'), where('gestorId', '==', user.uid));
+    } else if (userGestorId) {
+      // Corretor vê os outros corretores do mesmo gestor
+      q = query(collection(db, 'usuarios'), where('gestorId', '==', userGestorId));
+    } else {
+      setMembrosEquipe([]);
+      return;
+    }
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const lista = snapshot.docs.map(d => ({ docId: d.id, ...d.data() }));
+      setMembrosEquipe(lista);
+    });
+    return unsubscribe;
+  }, [user.uid, userRole, userGestorId]);
+
+  useEffect(() => {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       if (!snapshot.empty) {
         const docSnap = snapshot.docs[0];
@@ -463,7 +486,8 @@ function AppPrincipal({ user }: { user: User }) {
       (c.empreendimento || '').toLowerCase().includes(busca.toLowerCase());
     const faixaOk = filtroFaixa === 'Todas' || c.faixa === filtroFaixa;
     const statusOk = filtroStatus === 'Todos' || c.status === filtroStatus;
-    return buscaOk && faixaOk && statusOk;
+    const corretorOk = filtroCorretor === 'Todos' || c.corretorId === filtroCorretor;
+    return buscaOk && faixaOk && statusOk && corretorOk;
   });
 
   if (carregando) {
@@ -544,12 +568,15 @@ function AppPrincipal({ user }: { user: User }) {
             setFiltroFaixa={setFiltroFaixa}
             filtroStatus={filtroStatus}
             setFiltroStatus={setFiltroStatus}
+            filtroCorretor={filtroCorretor}
+            setFiltroCorretor={setFiltroCorretor}
+            membrosEquipe={membrosEquipe}
             onAbrirCliente={(c) => { setClienteSelecionado(c); setTela('checklist'); }}
             onExcluirCliente={setModalExcluirCliente}
           />
         )}
-        {abaAtiva === 'dashboard' && <TelaDashboard clientes={clientes} />}
-        {abaAtiva === 'configuracoes' && <TelaConfiguracoes user={user} userRole={userRole} userNome={userNomeCompleto} userDocId={userDocId} userGestorId={userGestorId} clientes={clientes} />}
+        {abaAtiva === 'dashboard' && <TelaDashboard clientes={clientesFiltrados} userRole={userRole} membrosEquipe={membrosEquipe} filtroCorretor={filtroCorretor} setFiltroCorretor={setFiltroCorretor} />}
+        {abaAtiva === 'configuracoes' && <TelaConfiguracoes user={user} userRole={userRole} userNome={userNomeCompleto} userDocId={userDocId} userGestorId={userGestorId} clientes={clientes} membrosEquipe={membrosEquipe} gestorUid={user.uid} />}
       </View>
 
       {/* FAB */}
@@ -746,6 +773,7 @@ function TelaCompletarPerfil({ user, userDocId, onConcluido }: {
 function TelaClientes({
   clientes, todosClientes, userRole, busca, setBusca,
   filtroFaixa, setFiltroFaixa, filtroStatus, setFiltroStatus,
+  filtroCorretor, setFiltroCorretor, membrosEquipe,
   onAbrirCliente, onExcluirCliente,
 }: {
   clientes: Cliente[];
@@ -757,6 +785,9 @@ function TelaClientes({
   setFiltroFaixa: (v: string) => void;
   filtroStatus: string;
   setFiltroStatus: (v: string) => void;
+  filtroCorretor: string;
+  setFiltroCorretor: (v: string) => void;
+  membrosEquipe: any[];
   onAbrirCliente: (c: Cliente) => void;
   onExcluirCliente: (c: Cliente) => void;
 }) {
@@ -802,6 +833,23 @@ function TelaClientes({
             </TouchableOpacity>
           ))}
         </ScrollView>
+
+        {/* Filtro corretor — só para gestor */}
+        {userRole === 'gestor' && membrosEquipe.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {[{ uid: 'Todos', nomeCompleto: 'Todos os corretores' }, ...membrosEquipe].map(m => (
+              <TouchableOpacity
+                key={m.uid}
+                style={[s.chipFiltro, filtroCorretor === m.uid && s.chipFiltroAtivo]}
+                onPress={() => setFiltroCorretor(m.uid)}
+              >
+                <Text style={[s.chipFiltroTexto, filtroCorretor === m.uid && s.chipFiltroTextoAtivo]}>
+                  {m.uid === 'Todos' ? '👥 Todos' : `👤 ${m.nomeCompleto || m.email || 'Corretor'}`}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
       </View>
 
       <ScrollView style={{ flex: 1, paddingHorizontal: 16, paddingTop: 8 }} contentContainerStyle={{ paddingBottom: 100 }}>
@@ -874,7 +922,13 @@ function TelaClientes({
 }
 
 // ─── ABA DASHBOARD ────────────────────────────────────────────────────────────
-function TelaDashboard({ clientes }: { clientes: Cliente[] }) {
+function TelaDashboard({ clientes, userRole, membrosEquipe, filtroCorretor, setFiltroCorretor }: {
+  clientes: Cliente[];
+  userRole: Role;
+  membrosEquipe: any[];
+  filtroCorretor: string;
+  setFiltroCorretor: (v: string) => void;
+}) {
   const total = clientes.length;
   const prontos = clientes.filter(c => c.docs.every(d => d.entregue)).length;
   const pendentes = clientes.filter(c => c.docs.some(d => !d.entregue)).length;
@@ -914,6 +968,24 @@ function TelaDashboard({ clientes }: { clientes: Cliente[] }) {
 
   return (
     <ScrollView style={{ flex: 1, paddingHorizontal: 16, paddingTop: 12 }} contentContainerStyle={{ paddingBottom: 40 }}>
+
+      {/* Filtro por corretor — só para gestor */}
+      {userRole === 'gestor' && membrosEquipe.length > 0 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+          {[{ uid: 'Todos', nomeCompleto: 'Todos os corretores' }, ...membrosEquipe].map(m => (
+            <TouchableOpacity
+              key={m.uid}
+              style={[s.chipFiltro, filtroCorretor === m.uid && s.chipFiltroAtivo]}
+              onPress={() => setFiltroCorretor(m.uid)}
+            >
+              <Text style={[s.chipFiltroTexto, filtroCorretor === m.uid && s.chipFiltroTextoAtivo]}>
+                {m.uid === 'Todos' ? '👥 Todos' : `👤 ${m.nomeCompleto || m.email || 'Corretor'}`}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
+
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
         {metricas.map((m, i) => (
           <View key={i} style={s.statCard}>
@@ -970,13 +1042,15 @@ function TelaDashboard({ clientes }: { clientes: Cliente[] }) {
 }
 
 // ─── ABA CONFIGURAÇÕES ────────────────────────────────────────────────────────
-function TelaConfiguracoes({ user, userRole, userNome, userDocId, userGestorId, clientes }: {
+function TelaConfiguracoes({ user, userRole, userNome, userDocId, userGestorId, clientes, membrosEquipe, gestorUid }: {
   user: User;
   userRole: Role;
   userNome: string;
   userDocId: string | null;
   userGestorId: string | null;
   clientes: Cliente[];
+  membrosEquipe: any[];
+  gestorUid: string;
 }) {
   const [novaSenha, setNovaSenha] = useState('');
   const [modalSenha, setModalSenha] = useState(false);
@@ -1074,6 +1148,13 @@ function TelaConfiguracoes({ user, userRole, userNome, userDocId, userGestorId, 
     }
   }
 
+  async function removerCorretor(membroDocId: string, nomeCorretor: string) {
+    if (!confirm(`Remover ${nomeCorretor} da equipe? Ele ainda poderá usar o app mas não aparecerá nos seus clientes.`)) return;
+    try {
+      await updateDoc(doc(db, 'usuarios', membroDocId), { gestorId: null });
+    } catch { alert('Erro ao remover. Tente novamente.'); }
+  }
+
   const iniciais = userNome ? getIniciais(userNome) : (user.email?.slice(0, 2).toUpperCase() || 'JM');
   const pendentesTotal = clientes.filter(c => c.docs.some(d => !d.entregue)).length;
 
@@ -1105,43 +1186,112 @@ function TelaConfiguracoes({ user, userRole, userNome, userDocId, userGestorId, 
       <Text style={s.secaoLabel}>EQUIPE</Text>
       <View style={s.secaoCard}>
         {userRole === 'gestor' ? (
-          /* Gestor: mostra seu código com botão copiar */
-          <View style={s.configRow}>
-            <Text style={s.configRowIcon}>🔑</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={s.configRowLabel}>Seu código de gestor</Text>
-              <Text style={{ fontSize: 11, color: C.cinza, marginTop: 2 }}>
-                Compartilhe com seus corretores ao criar a conta deles
-              </Text>
-              <Text
-                style={{ fontSize: 11, color: C.dourado, fontWeight: '700', marginTop: 6, fontFamily: 'monospace' }}
-                numberOfLines={1}
-                ellipsizeMode="middle"
+          <>
+            {/* Código do gestor com copiar */}
+            <View style={s.configRow}>
+              <Text style={s.configRowIcon}>🔑</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={s.configRowLabel}>Seu código de gestor</Text>
+                <Text style={{ fontSize: 11, color: C.cinza, marginTop: 2 }}>
+                  Compartilhe com seus corretores ao criar a conta deles
+                </Text>
+                <Text
+                  style={{ fontSize: 11, color: C.dourado, fontWeight: '700', marginTop: 6, fontFamily: 'monospace' }}
+                  numberOfLines={1}
+                  ellipsizeMode="middle"
+                >
+                  {user.uid}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={copiarCodigo}
+                style={{ backgroundColor: copiado ? C.verdeClaro : C.cinzaClaro, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginLeft: 8 }}
               >
-                {user.uid}
-              </Text>
+                <Text style={{ fontSize: 12, color: copiado ? C.verdeMedio : C.textoSub, fontWeight: '600' }}>
+                  {copiado ? '✓ Copiado' : '📋 Copiar'}
+                </Text>
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              onPress={copiarCodigo}
-              style={{ backgroundColor: copiado ? C.verdeClaro : C.cinzaClaro, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginLeft: 8 }}
-            >
-              <Text style={{ fontSize: 12, color: copiado ? C.verdeMedio : C.textoSub, fontWeight: '600' }}>
-                {copiado ? '✓ Copiado' : '📋 Copiar'}
-              </Text>
-            </TouchableOpacity>
-          </View>
+
+            {/* Lista de corretores */}
+            {membrosEquipe.length > 0 && (
+              <>
+                <View style={{ height: 1, backgroundColor: C.cinzaBorda, marginVertical: 12 }} />
+                <Text style={{ fontSize: 12, fontWeight: '700', color: C.textoSub, marginBottom: 8 }}>
+                  CORRETORES DA EQUIPE ({membrosEquipe.length})
+                </Text>
+                {membrosEquipe.map((m, i) => {
+                  const clientesCorretor = clientes.filter(c => c.corretorId === m.uid).length;
+                  return (
+                    <View key={m.uid || i}>
+                      {i > 0 && <View style={{ height: 1, backgroundColor: C.cinzaBorda, marginVertical: 8 }} />}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        <View style={[s.avatar, { width: 38, height: 38, borderRadius: 19 }]}>
+                          <Text style={[s.avatarTexto, { fontSize: 13 }]}>{getIniciais(m.nomeCompleto || m.email || '?')}</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: C.texto }}>{m.nomeCompleto || '—'}</Text>
+                          <Text style={{ fontSize: 11, color: C.cinza }}>{m.email} · {clientesCorretor} cliente{clientesCorretor !== 1 ? 's' : ''}</Text>
+                        </View>
+                        <TouchableOpacity
+                          onPress={() => removerCorretor(m.docId, m.nomeCompleto || m.email || 'corretor')}
+                          style={{ backgroundColor: C.erroClaro, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}
+                        >
+                          <Text style={{ fontSize: 11, color: C.erro, fontWeight: '600' }}>Remover</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })}
+              </>
+            )}
+            {membrosEquipe.length === 0 && (
+              <>
+                <View style={{ height: 1, backgroundColor: C.cinzaBorda, marginVertical: 12 }} />
+                <Text style={{ fontSize: 13, color: C.cinza, textAlign: 'center', paddingVertical: 8 }}>
+                  Nenhum corretor vinculado ainda.{'\n'}Compartilhe seu código acima.
+                </Text>
+              </>
+            )}
+          </>
         ) : (
-          /* Corretor: botão para vincular/alterar gestor */
-          <TouchableOpacity style={s.configRow} onPress={() => { setNovoGestorCodigo(userGestorId || ''); setModalGestor(true); }}>
-            <Text style={s.configRowIcon}>🏢</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={s.configRowLabel}>Vincular ao gestor</Text>
-              <Text style={{ fontSize: 11, color: C.cinza, marginTop: 2 }}>
-                {userGestorId ? '✓ Gestor vinculado' : 'Nenhum gestor vinculado ainda'}
-              </Text>
-            </View>
-            <Text style={s.configRowSeta}>›</Text>
-          </TouchableOpacity>
+          <>
+            {/* Corretor: botão para vincular/alterar gestor */}
+            <TouchableOpacity style={s.configRow} onPress={() => { setNovoGestorCodigo(userGestorId || ''); setModalGestor(true); }}>
+              <Text style={s.configRowIcon}>🏢</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={s.configRowLabel}>Vincular ao gestor</Text>
+                <Text style={{ fontSize: 11, color: C.cinza, marginTop: 2 }}>
+                  {userGestorId ? '✓ Gestor vinculado' : 'Nenhum gestor vinculado ainda'}
+                </Text>
+              </View>
+              <Text style={s.configRowSeta}>›</Text>
+            </TouchableOpacity>
+
+            {/* Lista de colegas de equipe */}
+            {membrosEquipe.length > 0 && (
+              <>
+                <View style={{ height: 1, backgroundColor: C.cinzaBorda, marginVertical: 12 }} />
+                <Text style={{ fontSize: 12, fontWeight: '700', color: C.textoSub, marginBottom: 8 }}>
+                  COLEGAS DE EQUIPE ({membrosEquipe.length})
+                </Text>
+                {membrosEquipe.map((m, i) => (
+                  <View key={m.uid || i}>
+                    {i > 0 && <View style={{ height: 1, backgroundColor: C.cinzaBorda, marginVertical: 8 }} />}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <View style={[s.avatar, { width: 38, height: 38, borderRadius: 19 }]}>
+                        <Text style={[s.avatarTexto, { fontSize: 13 }]}>{getIniciais(m.nomeCompleto || m.email || '?')}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: C.texto }}>{m.nomeCompleto || '—'}</Text>
+                        <Text style={{ fontSize: 11, color: C.cinza }}>{m.email}</Text>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </>
+            )}
+          </>
         )}
       </View>
 
@@ -1309,8 +1459,8 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
     onAtualizar({ ...cliente, docs: novosDocs });
   }
 
-  function salvarAnexo(id: number, base64: string, nome: string, tipo: string) {
-    const novosDocs = cliente.docs.map(d => d.id === id ? { ...d, arquivoBase64: base64, arquivoNome: nome, arquivoTipo: tipo } : d);
+  function salvarAnexo(id: number, base64: string, nome: string, tipo: string, data: number) {
+    const novosDocs = cliente.docs.map(d => d.id === id ? { ...d, arquivoBase64: base64, arquivoNome: nome, arquivoTipo: tipo, arquivoData: data } : d);
     onAtualizar({ ...cliente, docs: novosDocs });
   }
 
@@ -1322,47 +1472,6 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
   function alterarStatus(novoStatus: StatusCliente) {
     onAtualizar({ ...cliente, status: novoStatus });
     setStatusModal(false);
-  }
-
-  function abrirAnexos() {
-    const docsComAnexo = cliente.docs.filter(d => d.arquivoBase64 && d.arquivoNome);
-    if (docsComAnexo.length === 0) {
-      alert('Nenhum documento anexado ainda.');
-      return;
-    }
-    docsComAnexo.forEach(d => {
-      const tipo = d.arquivoTipo || 'application/octet-stream';
-      const url = `data:${tipo};base64,${d.arquivoBase64}`;
-      const janela = window.open('', '_blank');
-      if (janela) {
-        janela.document.write(`
-          <html>
-            <head>
-              <title>${d.nome} — ${cliente.nome}</title>
-              <style>
-                body { margin: 0; background: #111; display: flex; flex-direction: column; align-items: center; min-height: 100vh; font-family: sans-serif; }
-                h2 { color: #C9A84C; margin: 20px 0 8px; font-size: 16px; }
-                p { color: #888; font-size: 13px; margin: 0 0 16px; }
-                img { max-width: 100%; max-height: 80vh; border-radius: 8px; box-shadow: 0 4px 24px rgba(0,0,0,0.5); }
-                iframe { width: 100vw; height: 88vh; border: none; }
-                .btn { margin-top: 16px; margin-bottom: 24px; background: #C9A84C; color: #1A3C34; border: none; padding: 10px 28px; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
-                .btn:hover { opacity: 0.85; }
-              </style>
-            </head>
-            <body>
-              <h2>${d.nome}</h2>
-              <p>${cliente.nome} · ${cliente.empreendimento || cliente.perfil}</p>
-              ${tipo.startsWith('image/')
-                ? `<img src="${url}" />`
-                : `<iframe src="${url}"></iframe>`
-              }
-              <button class="btn" onclick="window.print()">🖨️ Salvar como PDF / Imprimir</button>
-            </body>
-          </html>
-        `);
-        janela.document.close();
-      }
-    });
   }
 
   return (
@@ -1399,7 +1508,7 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
         </Text>
       </View>
 
-      <ScrollView style={{ flex: 1, paddingHorizontal: 16, paddingTop: 12 }} contentContainerStyle={{ paddingBottom: 120 }}>
+      <ScrollView style={{ flex: 1, paddingHorizontal: 16, paddingTop: 12 }} contentContainerStyle={{ paddingBottom: 180 }} keyboardShouldPersistTaps="handled">
         {cliente.docs.map(doc => (
           <DocItem
             key={doc.id}
@@ -1420,14 +1529,6 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
           <TouchableOpacity style={s.btnEmail} onPress={() => setEmailModal(true)}>
             <Text style={s.btnEmailTexto}>✉️ Enviar por E-mail</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[s.btnEmail, { backgroundColor: C.verdeClaro, borderColor: C.verdeMedio, borderWidth: 1 }]}
-            onPress={abrirAnexos}
-          >
-            <Text style={[s.btnEmailTexto, { color: C.verdeMedio }]}>
-              📄 Ver documentos anexados ({cliente.docs.filter(d => d.arquivoBase64).length})
-            </Text>
-          </TouchableOpacity>
           <TouchableOpacity style={s.btnExcluir} onPress={() => onExcluir(cliente)}>
             <Text style={s.btnExcluirTexto}>🗑 Excluir cliente</Text>
           </TouchableOpacity>
@@ -1444,19 +1545,6 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
                 Enviando como: <Text style={{ color: C.verde, fontWeight: '600' }}>{userEmail}</Text>
               </Text>
             )}
-            {(() => {
-              const anexados = cliente.docs.filter(d => d.arquivoBase64).length;
-              return anexados > 0 ? (
-                <View style={{ backgroundColor: C.verdeClaro, borderRadius: 8, padding: 10, marginBottom: 12 }}>
-                  <Text style={{ fontSize: 12, color: C.verdeMedio, fontWeight: '600' }}>
-                    📎 {anexados} documento{anexados > 1 ? 's' : ''} anexado{anexados > 1 ? 's' : ''}
-                  </Text>
-                  <Text style={{ fontSize: 11, color: C.cinza, marginTop: 3 }}>
-                    Após enviar o e-mail, use "Ver documentos anexados" para abrir e encaminhar os arquivos.
-                  </Text>
-                </View>
-              ) : null;
-            })()}
             <Text style={s.label}>E-mail de destino</Text>
             <TextInput style={s.input} placeholder="cliente@exemplo.com" value={emailDestino} onChangeText={setEmailDestino} keyboardType="email-address" autoCapitalize="none" placeholderTextColor={C.cinza} />
             <View style={s.modalBotoes}>
@@ -1592,12 +1680,17 @@ function DocItem({ doc, onToggle, onSalvarObs, onSalvarAnexo, onRemoverAnexo }: 
   doc: Documento;
   onToggle: (id: number) => void;
   onSalvarObs: (id: number, obs: string) => void;
-  onSalvarAnexo: (id: number, base64: string, nome: string, tipo: string) => void;
+  onSalvarAnexo: (id: number, base64: string, nome: string, tipo: string, data: number) => void;
   onRemoverAnexo: (id: number) => void;
 }) {
   const [expandido, setExpandido] = useState(false);
   const [obs, setObs] = useState(doc.observacao || '');
   const [salvo, setSalvo] = useState(false);
+
+  // Sincroniza obs quando doc.observacao muda externamente (ex: outro dispositivo salva)
+  useEffect(() => {
+    setObs(doc.observacao || '');
+  }, [doc.observacao]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   function handleSalvar() {
@@ -1627,7 +1720,7 @@ function DocItem({ doc, onToggle, onSalvarObs, onSalvarAnexo, onRemoverAnexo }: 
         const reader = new FileReader();
         reader.onload = () => {
           const base64 = (reader.result as string).split(',')[1];
-          onSalvarAnexo(doc.id, base64, file.name, file.type);
+          onSalvarAnexo(doc.id, base64, file.name, file.type, Date.now());
         };
         reader.readAsDataURL(file);
       };
@@ -1659,7 +1752,9 @@ function DocItem({ doc, onToggle, onSalvarObs, onSalvarAnexo, onRemoverAnexo }: 
             <Text style={s.obsPreview} numberOfLines={1}>💬 {doc.observacao}</Text>
           ) : null}
           {doc.arquivoNome ? (
-            <Text style={s.anexoPreview} numberOfLines={1}>📎 {doc.arquivoNome}</Text>
+            <Text style={s.anexoPreview} numberOfLines={1}>
+              📎 {doc.arquivoNome}{doc.arquivoData ? ` · ${new Date(doc.arquivoData).toLocaleDateString('pt-BR')}` : ''}
+            </Text>
           ) : null}
         </View>
         {!doc.entregue && (
@@ -1701,7 +1796,11 @@ function DocItem({ doc, onToggle, onSalvarObs, onSalvarAnexo, onRemoverAnexo }: 
             <View style={s.anexoCard}>
               <TouchableOpacity style={{ flex: 1 }} onPress={handleAbrirAnexo}>
                 <Text style={s.anexoNome} numberOfLines={1}>📎 {doc.arquivoNome}</Text>
-                <Text style={{ fontSize: 11, color: C.cinza }}>Toque para abrir</Text>
+                <Text style={{ fontSize: 11, color: C.cinza }}>
+                  {doc.arquivoData
+                    ? `Anexado em ${new Date(doc.arquivoData).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+                    : 'Toque para abrir'}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity style={s.anexoRemover} onPress={() => onRemoverAnexo(doc.id)}>
                 <Text style={s.obsExcluirTexto}>🗑</Text>
@@ -1772,7 +1871,7 @@ const s = StyleSheet.create({
   // CARDS CLIENTES
   cardWrapper: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   card: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 20, padding: 14, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 },
-  cardNome: { fontSize: 14, fontWeight: '600', color: C.texto },
+  cardNome: { fontSize: 14, fontWeight: '600', color: C.texto, flexShrink: 1, flexWrap: 'wrap' },
   cardSub: { fontSize: 12, color: C.cinza, marginTop: 2 },
   cardEmpre: { fontSize: 11, color: C.textoSub, marginTop: 2 },
   cardPct: { fontSize: 15, fontWeight: '700', color: C.dourado, marginLeft: 8 },
@@ -1785,8 +1884,8 @@ const s = StyleSheet.create({
   avatarTexto: { color: C.dourado, fontWeight: '700', fontSize: 14 },
 
   // STATUS
-  statusBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start' },
-  statusTexto: { fontSize: 11, fontWeight: '600' },
+  statusBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start', flexShrink: 1 },
+  statusTexto: { fontSize: 11, fontWeight: '600', flexShrink: 1 },
   statusOpcao: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 12, backgroundColor: C.cinzaClaro, borderWidth: 1, borderColor: 'transparent' },
 
   // BADGE PARADO
@@ -1853,7 +1952,7 @@ const s = StyleSheet.create({
   docCard: { backgroundColor: '#fff', borderRadius: 20, marginBottom: 10, overflow: 'hidden', borderWidth: 1, borderColor: C.cinzaBorda },
   docCardEntregue: { borderColor: C.verdeClaro, backgroundColor: '#F7FBF9' },
   docRow: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 10 },
-  docNome: { fontSize: 13, fontWeight: '600', color: C.texto },
+  docNome: { fontSize: 13, fontWeight: '600', color: C.texto, flexShrink: 1, flexWrap: 'wrap' },
   docNomeEntregue: { color: C.verdeMedio, textDecorationLine: 'line-through' },
   docSub: { fontSize: 11, color: C.cinza, marginTop: 2 },
   checkbox: { padding: 2 },
