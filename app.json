@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "checklist-mcmv",
+    "name": "Certus",
     "slug": "checklist-mcmv",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,29 +8,40 @@
     "scheme": "checklistmcmv",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/images/icon.png"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#1A3C34",
+        "foregroundImage": "./assets/images/icon.png"
       },
       "predictiveBackGestureEnabled": false
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "manifest": {
+        "name": "Certus",
+        "short_name": "Certus",
+        "theme_color": "#1A3C34",
+        "background_color": "#1A3C34",
+        "icons": [
+          {
+            "src": "./assets/images/icon.png",
+            "sizes": "1024x1024",
+            "type": "image/png"
+          }
+        ]
+      }
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#1A3C34",
           "android": {
-            "image": "./assets/images/splash-icon.png",
+            "image": "./assets/images/icon.png",
             "imageWidth": 76
           }
         }
