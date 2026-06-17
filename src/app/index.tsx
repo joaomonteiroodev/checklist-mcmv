@@ -502,9 +502,10 @@ function AppPrincipal({ user }: { user: User }) {
       {/* HEADER */}
       <View style={s.header}>
         <View style={s.headerLogo}>
-          <View style={s.logoBox}>
-            <Text style={s.logoCheck}>✓</Text>
-          </View>
+          <Image
+            source={require('../../assets/images/icon.png')}
+            style={{ width: 32, height: 32, borderRadius: 10 }}
+          />
           <Text style={s.headerNome}>Certus</Text>
           {userRole === 'gestor' && (
             <View style={{ backgroundColor: C.dourado, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2, marginLeft: 6 }}>
