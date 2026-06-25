@@ -11,8 +11,9 @@ import {
   addDoc,
   collection,
   deleteDoc,
-  doc,
+  doc as firestoreDoc,
   getDocs,
+  getDoc,
   onSnapshot,
   query,
   updateDoc,
@@ -64,10 +65,11 @@ interface Documento {
   sub: string;
   entregue: boolean;
   observacao: string;
-  arquivoBase64?: string;
+  arquivoBase64?: string;  // mantido para compatibilidade com anexos antigos
   arquivoNome?: string;
   arquivoTipo?: string;
   arquivoData?: number;
+  anexoId?: string;        // ID do documento na coleção 'anexos' (novo sistema)
 }
 
 interface Cliente {
@@ -494,7 +496,7 @@ function AppPrincipal({ user }: { user: User }) {
   }
 
   async function excluirCliente(cliente: Cliente) {
-    try { await deleteDoc(doc(db, 'clientes', cliente.id)); } catch { alert('Erro ao excluir.'); }
+    try { await deleteDoc(firestoreDoc(db, 'clientes', cliente.id)); } catch { alert('Erro ao excluir.'); }
     setModalExcluirCliente(null);
   }
 
@@ -502,7 +504,7 @@ function AppPrincipal({ user }: { user: User }) {
     const { id, ...dados } = clienteAtualizado;
     setClienteSelecionado(clienteAtualizado);
     try {
-      await updateDoc(doc(db, 'clientes', id), { ...dados, ultimaAtualizacao: Date.now() });
+      await updateDoc(firestoreDoc(db, 'clientes', id), { ...dados, ultimaAtualizacao: Date.now() });
     } catch { alert('Erro ao salvar.'); }
   }
 
@@ -754,7 +756,7 @@ function TelaCompletarPerfil({ user, userDocId, onConcluido }: {
     const gestorId = (role === 'corretor' && gestorCodigo.trim()) ? gestorCodigo.trim() : null;
     try {
       if (userDocId) {
-        await updateDoc(doc(db, 'usuarios', userDocId), { nome: nome.trim(), sobrenome: sobrenome.trim(), nomeCompleto, role, gestorId });
+        await updateDoc(firestoreDoc(db, 'usuarios', userDocId), { nome: nome.trim(), sobrenome: sobrenome.trim(), nomeCompleto, role, gestorId });
       } else {
         await addDoc(collection(db, 'usuarios'), { uid: user.uid, email: user.email, nome: nome.trim(), sobrenome: sobrenome.trim(), nomeCompleto, role, gestorId });
       }
@@ -1197,12 +1199,12 @@ function TelaConfiguracoes({ user, userRole, userNome, userDocId, userGestorId, 
     try {
       const gestorId = novoGestorCodigo.trim() || null;
       if (userDocId) {
-        await updateDoc(doc(db, 'usuarios', userDocId), { gestorId });
+        await updateDoc(firestoreDoc(db, 'usuarios', userDocId), { gestorId });
       }
       // Atualiza todos os clientes antigos do corretor com o novo gestorId
       const qClientes = query(collection(db, 'clientes'), where('corretorId', '==', user.uid));
       const snapshot = await getDocs(qClientes);
-      const atualizacoes = snapshot.docs.map(d => updateDoc(doc(db, 'clientes', d.id), { gestorId }));
+      const atualizacoes = snapshot.docs.map(d => updateDoc(firestoreDoc(db, 'clientes', d.id), { gestorId }));
       await Promise.all(atualizacoes);
       setSucessoGestor(true);
       setTimeout(() => { setModalGestor(false); setSucessoGestor(false); }, 1500);
@@ -1222,7 +1224,7 @@ function TelaConfiguracoes({ user, userRole, userNome, userDocId, userGestorId, 
   async function removerCorretor(membroDocId: string, nomeCorretor: string) {
     if (!confirm(`Remover ${nomeCorretor} da equipe? Ele ainda poderá usar o app mas não aparecerá nos seus clientes.`)) return;
     try {
-      await updateDoc(doc(db, 'usuarios', membroDocId), { gestorId: null });
+      await updateDoc(firestoreDoc(db, 'usuarios', membroDocId), { gestorId: null });
     } catch { alert('Erro ao remover. Tente novamente.'); }
   }
 
@@ -1232,7 +1234,7 @@ function TelaConfiguracoes({ user, userRole, userNome, userDocId, userGestorId, 
     const nomeCompleto = `${editNome.trim()} ${editSobrenome.trim()}`.trim();
     try {
       if (userDocId) {
-        await updateDoc(doc(db, 'usuarios', userDocId), {
+        await updateDoc(firestoreDoc(db, 'usuarios', userDocId), {
           nome: editNome.trim(),
           sobrenome: editSobrenome.trim(),
           nomeCompleto,
@@ -1240,7 +1242,7 @@ function TelaConfiguracoes({ user, userRole, userNome, userDocId, userGestorId, 
         // Atualiza corretorNome em todos os clientes do usuário
         const qClientes = query(collection(db, 'clientes'), where('corretorId', '==', user.uid));
         const snap = await getDocs(qClientes);
-        await Promise.all(snap.docs.map(d => updateDoc(doc(db, 'clientes', d.id), { corretorNome: nomeCompleto })));
+        await Promise.all(snap.docs.map(d => updateDoc(firestoreDoc(db, 'clientes', d.id), { corretorNome: nomeCompleto })));
       }
       setSucessoPerfil(true);
       setTimeout(() => { setModalPerfil(false); setSucessoPerfil(false); }, 1500);
@@ -1609,14 +1611,41 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
     onAtualizar({ ...cliente, docs: novosDocs });
   }
 
-  function salvarAnexo(id: number, base64: string, nome: string, tipo: string, data: number) {
-    const novosDocs = cliente.docs.map(d => d.id === id ? { ...d, arquivoBase64: base64, arquivoNome: nome, arquivoTipo: tipo, arquivoData: data } : d);
-    onAtualizar({ ...cliente, docs: novosDocs });
+  async function salvarAnexo(id: number, base64: string, nome: string, tipo: string, data: number) {
+    try {
+      // Salva o Base64 em documento separado na coleção 'anexos'
+      const anexoRef = await addDoc(collection(db, 'anexos'), {
+        clienteId: cliente.id,
+        docId: id,
+        base64,
+        nome,
+        tipo,
+        data,
+      });
+      // No cliente, salva apenas a referência (sem o Base64 pesado)
+      const novosDocs = cliente.docs.map(d =>
+        d.id === id
+          ? { ...d, arquivoNome: nome, arquivoTipo: tipo, arquivoData: data, anexoId: anexoRef.id, arquivoBase64: undefined }
+          : d
+      );
+      onAtualizar({ ...cliente, docs: novosDocs });
+    } catch { alert('Erro ao salvar anexo. O arquivo pode ser grande demais.'); }
   }
 
-  function removerAnexo(id: number) {
-    const novosDocs = cliente.docs.map(d => d.id === id ? { ...d, arquivoBase64: undefined, arquivoNome: undefined, arquivoTipo: undefined } : d);
-    onAtualizar({ ...cliente, docs: novosDocs });
+  async function removerAnexo(id: number) {
+    const docAlvo = cliente.docs.find(d => d.id === id);
+    try {
+      // Remove da coleção 'anexos' se existir referência
+      if (docAlvo?.anexoId) {
+        await deleteDoc(firestoreDoc(db, 'anexos', docAlvo.anexoId));
+      }
+      const novosDocs = cliente.docs.map(d =>
+        d.id === id
+          ? { ...d, arquivoBase64: undefined, arquivoNome: undefined, arquivoTipo: undefined, arquivoData: undefined, anexoId: undefined }
+          : d
+      );
+      onAtualizar({ ...cliente, docs: novosDocs });
+    } catch { alert('Erro ao remover anexo.'); }
   }
 
   function alterarStatus(novoStatus: StatusCliente) {
@@ -1895,8 +1924,8 @@ function DocItem({ doc, onToggle, onSalvarObs, onSalvarAnexo, onRemoverAnexo }: 
       input.onchange = async (e: any) => {
         const file: File = e.target.files[0];
         if (!file) return;
-        if (file.size > 1.5 * 1024 * 1024) {
-          alert('Arquivo muito grande. Máximo 1.5MB.');
+        if (file.size > 4 * 1024 * 1024) {
+          alert('Arquivo muito grande. Máximo 4MB.');
           return;
         }
         const reader = new FileReader();
@@ -1910,11 +1939,21 @@ function DocItem({ doc, onToggle, onSalvarObs, onSalvarAnexo, onRemoverAnexo }: 
     }
   }
 
-  function handleAbrirAnexo() {
-    if (!doc.arquivoBase64 || !doc.arquivoTipo) return;
-    const byteChars = atob(doc.arquivoBase64);
+  async function handleAbrirAnexo() {
+    let base64 = doc.arquivoBase64;
+    let tipo = doc.arquivoTipo;
+
+    if (!base64 && doc.anexoId) {
+      try {
+        const snap = await getDoc(firestoreDoc(db, 'anexos', doc.anexoId));
+        if (snap.exists()) { base64 = snap.data().base64; tipo = snap.data().tipo; }
+      } catch { alert('Erro ao abrir anexo.'); return; }
+    }
+
+    if (!base64 || !tipo) return;
+    const byteChars = atob(base64);
     const byteNums = new Array(byteChars.length).fill(0).map((_, i) => byteChars.charCodeAt(i));
-    const blob = new Blob([new Uint8Array(byteNums)], { type: doc.arquivoTipo });
+    const blob = new Blob([new Uint8Array(byteNums)], { type: tipo });
     const url = URL.createObjectURL(blob);
     window.open(url, '_blank');
   }
