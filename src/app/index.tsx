@@ -59,17 +59,25 @@ type Aba = 'clientes' | 'dashboard' | 'configuracoes';
 type Role = 'corretor' | 'gestor';
 type StatusCliente = 'Em atendimento' | 'Em análise' | 'Aguardando banco' | 'Aprovado' | 'Reprovado';
 
+interface Anexo {
+  anexoId: string;
+  nome: string;
+  tipo: string;
+  data: number;
+}
+
 interface Documento {
   id: number;
   nome: string;
   sub: string;
   entregue: boolean;
   observacao: string;
-  arquivoBase64?: string;  // mantido para compatibilidade com anexos antigos
+  arquivoBase64?: string;  // compatibilidade com anexos antigos
   arquivoNome?: string;
   arquivoTipo?: string;
   arquivoData?: number;
-  anexoId?: string;        // ID do documento na coleção 'anexos' (novo sistema)
+  anexoId?: string;        // compatibilidade com anexos antigos (único)
+  anexos?: Anexo[];        // novo: múltiplos anexos
 }
 
 interface Cliente {
@@ -1574,9 +1582,31 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
   async function enviarEmail() {
     if (!emailDestino.trim()) { alert('Digite o e-mail de destino.'); return; }
     setEnviandoEmail(true);
-    const pendentesLista = cliente.docs.filter(d => !d.entregue).map(d => `• ${d.nome}`).join('\n');
-    const entreguesLista = cliente.docs.filter(d => d.entregue).map(d => `✓ ${d.nome}`).join('\n');
-    const corpo = `DOCUMENTOS ENTREGUES:\n${entreguesLista || 'Nenhum'}\n\nDOCUMENTOS PENDENTES:\n${pendentesLista || 'Nenhum'}`;
+
+    const entregues = cliente.docs.filter(d => d.entregue);
+    const pendentes = cliente.docs.filter(d => !d.entregue);
+    const total = cliente.docs.length;
+    const pctEmail = total > 0 ? Math.round((entregues.length / total) * 100) : 0;
+
+    const entreguesLista = entregues.map(d => `  ✓ ${d.nome}`).join('\n');
+    const pendentesLista = pendentes.map(d => `  • ${d.nome}`).join('\n');
+
+    const corpo = [
+      `Cliente: ${cliente.nome}`,
+      `Perfil: ${cliente.perfil} | ${getLabelFaixa(cliente.faixa)} | Renda: ${formatarRenda(cliente.renda)}`,
+      `Empreendimento: ${cliente.empreendimento || 'Não informado'}`,
+      `Telefone: ${cliente.telefone || 'Não informado'}`,
+      cliente.email ? `E-mail: ${cliente.email}` : null,
+      `Status: ${cliente.status || 'Em atendimento'}`,
+      `Corretor: ${cliente.corretorNome || userEmail || 'Não informado'}`,
+      '',
+      `DOCUMENTOS ENTREGUES (${entregues.length}/${total} — ${pctEmail}%):`,
+      entreguesLista || '  Nenhum documento entregue ainda.',
+      '',
+      `DOCUMENTOS PENDENTES (${pendentes.length}/${total}):`,
+      pendentesLista || '  Todos os documentos foram entregues!',
+    ].filter(l => l !== null).join('\n');
+
     try {
       const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
         method: 'POST',
@@ -1613,7 +1643,6 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
 
   async function salvarAnexo(id: number, base64: string, nome: string, tipo: string, data: number) {
     try {
-      // Salva o Base64 em documento separado na coleção 'anexos'
       const anexoRef = await addDoc(collection(db, 'anexos'), {
         clienteId: cliente.id,
         docId: id,
@@ -1622,28 +1651,24 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
         tipo,
         data,
       });
-      // No cliente, salva apenas a referência (sem o Base64 pesado)
+      const novoAnexo: Anexo = { anexoId: anexoRef.id, nome, tipo, data };
       const novosDocs = cliente.docs.map(d =>
         d.id === id
-          ? { ...d, arquivoNome: nome, arquivoTipo: tipo, arquivoData: data, anexoId: anexoRef.id, arquivoBase64: undefined }
+          ? { ...d, anexos: [...(d.anexos || []), novoAnexo], arquivoNome: nome, arquivoData: data }
           : d
       );
       onAtualizar({ ...cliente, docs: novosDocs });
-    } catch { alert('Erro ao salvar anexo. O arquivo pode ser grande demais.'); }
+    } catch { alert('Erro ao salvar anexo.'); }
   }
 
-  async function removerAnexo(id: number) {
-    const docAlvo = cliente.docs.find(d => d.id === id);
+  async function removerAnexo(docId: number, anexoId: string) {
     try {
-      // Remove da coleção 'anexos' se existir referência
-      if (docAlvo?.anexoId) {
-        await deleteDoc(firestoreDoc(db, 'anexos', docAlvo.anexoId));
-      }
-      const novosDocs = cliente.docs.map(d =>
-        d.id === id
-          ? { ...d, arquivoBase64: undefined, arquivoNome: undefined, arquivoTipo: undefined, arquivoData: undefined, anexoId: undefined }
-          : d
-      );
+      await deleteDoc(firestoreDoc(db, 'anexos', anexoId));
+      const novosDocs = cliente.docs.map(d => {
+        if (d.id !== docId) return d;
+        const novosAnexos = (d.anexos || []).filter(a => a.anexoId !== anexoId);
+        return { ...d, anexos: novosAnexos, arquivoNome: novosAnexos[0]?.nome, arquivoData: novosAnexos[0]?.data };
+      });
       onAtualizar({ ...cliente, docs: novosDocs });
     } catch { alert('Erro ao remover anexo.'); }
   }
@@ -1695,8 +1720,7 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
             onToggle={toggleDoc}
             onSalvarObs={salvarObs}
             onSalvarAnexo={salvarAnexo}
-            onRemoverAnexo={removerAnexo}
-          />
+            onRemoverAnexo={removerAnexo}          />
         ))}
 
         <View style={{ marginTop: 16, gap: 10 }}>
@@ -1892,17 +1916,14 @@ function DocItem({ doc, onToggle, onSalvarObs, onSalvarAnexo, onRemoverAnexo }: 
   onToggle: (id: number) => void;
   onSalvarObs: (id: number, obs: string) => void;
   onSalvarAnexo: (id: number, base64: string, nome: string, tipo: string, data: number) => void;
-  onRemoverAnexo: (id: number) => void;
+  onRemoverAnexo: (docId: number, anexoId: string) => void;
 }) {
   const [expandido, setExpandido] = useState(false);
   const [obs, setObs] = useState(doc.observacao || '');
   const [salvo, setSalvo] = useState(false);
+  const [arrastando, setArrastando] = useState(false);
 
-  // Sincroniza obs quando doc.observacao muda externamente (ex: outro dispositivo salva)
-  useEffect(() => {
-    setObs(doc.observacao || '');
-  }, [doc.observacao]);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => { setObs(doc.observacao || ''); }, [doc.observacao]);
 
   function handleSalvar() {
     onSalvarObs(doc.id, obs);
@@ -1916,47 +1937,76 @@ function DocItem({ doc, onToggle, onSalvarObs, onSalvarAnexo, onRemoverAnexo }: 
     setSalvo(false);
   }
 
+  async function processarArquivo(file: File) {
+    if (file.size > 4 * 1024 * 1024) { alert('Arquivo muito grande. Máximo 4MB.'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = (reader.result as string).split(',')[1];
+      onSalvarAnexo(doc.id, base64, file.name, file.type, Date.now());
+    };
+    reader.readAsDataURL(file);
+  }
+
   function handleAnexar() {
-    if (Platform.OS === 'web') {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'image/*,application/pdf';
-      input.onchange = async (e: any) => {
-        const file: File = e.target.files[0];
-        if (!file) return;
-        if (file.size > 4 * 1024 * 1024) {
-          alert('Arquivo muito grande. Máximo 4MB.');
-          return;
+    if (Platform.OS !== 'web') return;
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*,application/pdf';
+    input.multiple = true;
+    input.onchange = async (e: any) => {
+      const files: File[] = Array.from(e.target.files || []);
+      for (const file of files) await processarArquivo(file);
+    };
+    input.click();
+  }
+
+  // Ctrl+V — colar imagem da área de transferência
+  useEffect(() => {
+    if (!expandido || Platform.OS !== 'web') return;
+    async function handlePaste(e: ClipboardEvent) {
+      const items = Array.from(e.clipboardData?.items || []);
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            const nomeArquivo = `imagem_colada_${Date.now()}.png`;
+            const fileRenomeado = new File([file], nomeArquivo, { type: file.type });
+            await processarArquivo(fileRenomeado);
+          }
         }
-        const reader = new FileReader();
-        reader.onload = () => {
-          const base64 = (reader.result as string).split(',')[1];
-          onSalvarAnexo(doc.id, base64, file.name, file.type, Date.now());
-        };
-        reader.readAsDataURL(file);
-      };
-      input.click();
+      }
     }
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [expandido, doc.id]);
+
+  // Drag & drop
+  function handleDragOver(e: any) { e.preventDefault(); setArrastando(true); }
+  function handleDragLeave() { setArrastando(false); }
+  async function handleDrop(e: any) {
+    e.preventDefault(); setArrastando(false);
+    const files: File[] = Array.from(e.dataTransfer?.files || []);
+    for (const file of files) await processarArquivo(file);
   }
 
-  async function handleAbrirAnexo() {
-    let base64 = doc.arquivoBase64;
-    let tipo = doc.arquivoTipo;
-
-    if (!base64 && doc.anexoId) {
-      try {
-        const snap = await getDoc(firestoreDoc(db, 'anexos', doc.anexoId));
-        if (snap.exists()) { base64 = snap.data().base64; tipo = snap.data().tipo; }
-      } catch { alert('Erro ao abrir anexo.'); return; }
-    }
-
-    if (!base64 || !tipo) return;
-    const byteChars = atob(base64);
-    const byteNums = new Array(byteChars.length).fill(0).map((_, i) => byteChars.charCodeAt(i));
-    const blob = new Blob([new Uint8Array(byteNums)], { type: tipo });
-    const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');
+  async function handleAbrirAnexo(a: Anexo) {
+    try {
+      const snap = await getDoc(firestoreDoc(db, 'anexos', a.anexoId));
+      if (!snap.exists()) { alert('Arquivo não encontrado.'); return; }
+      const { base64, tipo } = snap.data();
+      const byteChars = atob(base64);
+      const byteNums = new Array(byteChars.length).fill(0).map((_, i) => byteChars.charCodeAt(i));
+      const blob = new Blob([new Uint8Array(byteNums)], { type: tipo });
+      window.open(URL.createObjectURL(blob), '_blank');
+    } catch { alert('Erro ao abrir arquivo.'); }
   }
+
+  // Compatibilidade: converte formato antigo (único anexo) para exibição
+  const anexosLegacy: Anexo[] = (!doc.anexos || doc.anexos.length === 0) && (doc.anexoId || doc.arquivoNome)
+    ? [{ anexoId: doc.anexoId || '', nome: doc.arquivoNome || 'Arquivo', tipo: doc.arquivoTipo || '', data: doc.arquivoData || 0 }]
+    : [];
+  const todosAnexos: Anexo[] = [...(doc.anexos || []), ...anexosLegacy];
+  const totalAnexos = todosAnexos.length;
 
   return (
     <View style={[s.docCard, doc.entregue && s.docCardEntregue]}>
@@ -1969,20 +2019,15 @@ function DocItem({ doc, onToggle, onSalvarObs, onSalvarAnexo, onRemoverAnexo }: 
         <View style={{ flex: 1 }}>
           <Text style={[s.docNome, doc.entregue && s.docNomeEntregue]}>{doc.nome}</Text>
           <Text style={s.docSub}>{doc.sub}</Text>
-          {doc.observacao ? (
-            <Text style={s.obsPreview} numberOfLines={1}>💬 {doc.observacao}</Text>
-          ) : null}
-          {doc.arquivoNome ? (
+          {doc.observacao ? <Text style={s.obsPreview} numberOfLines={1}>💬 {doc.observacao}</Text> : null}
+          {totalAnexos > 0 && (
             <Text style={s.anexoPreview} numberOfLines={1}>
-              📎 {doc.arquivoNome}{doc.arquivoData ? ` · ${new Date(doc.arquivoData).toLocaleDateString('pt-BR')}` : ''}
+              📎 {totalAnexos} arquivo{totalAnexos > 1 ? 's' : ''} anexado{totalAnexos > 1 ? 's' : ''}
+              {todosAnexos[0]?.data ? ` · ${new Date(todosAnexos[0].data).toLocaleDateString('pt-BR')}` : ''}
             </Text>
-          ) : null}
+          )}
         </View>
-        {!doc.entregue && (
-          <View style={s.badgePendente}>
-            <Text style={s.badgePendenteTexto}>Pendente</Text>
-          </View>
-        )}
+        {!doc.entregue && <View style={s.badgePendente}><Text style={s.badgePendenteTexto}>Pendente</Text></View>}
         <Text style={{ fontSize: 11, color: C.cinza, marginLeft: 6 }}>{expandido ? '▲' : '▼'}</Text>
       </TouchableOpacity>
 
@@ -2010,27 +2055,56 @@ function DocItem({ doc, onToggle, onSalvarObs, onSalvarAnexo, onRemoverAnexo }: 
             </View>
           </View>
 
-          {/* Anexo */}
+          {/* Anexos */}
           <View style={{ height: 1, backgroundColor: C.cinzaBorda, marginVertical: 12 }} />
-          <Text style={s.obsLabel}>Anexo</Text>
-          {doc.arquivoNome ? (
-            <View style={s.anexoCard}>
-              <TouchableOpacity style={{ flex: 1 }} onPress={handleAbrirAnexo}>
-                <Text style={s.anexoNome} numberOfLines={1}>📎 {doc.arquivoNome}</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <Text style={s.obsLabel}>Anexos {totalAnexos > 0 ? `(${totalAnexos})` : ''}</Text>
+            <TouchableOpacity onPress={handleAnexar} style={{ backgroundColor: C.verdeClaro, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
+              <Text style={{ fontSize: 12, color: C.verdeMedio, fontWeight: '600' }}>+ Adicionar</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Zona de drag & drop / colar */}
+          {Platform.OS === 'web' && (
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              style={{
+                border: `2px dashed ${arrastando ? '#1D9E75' : '#C8C4BE'}`,
+                borderRadius: 10,
+                padding: '10px 14px',
+                marginBottom: 10,
+                backgroundColor: arrastando ? '#E8F5F0' : '#FAF8F5',
+                textAlign: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}
+              onClick={handleAnexar}
+            >
+              <span style={{ fontSize: 13, color: arrastando ? '#1D9E75' : '#888780' }}>
+                {arrastando ? '📂 Solte para anexar' : '📋 Arraste, cole (Ctrl+V) ou clique para anexar'}
+              </span>
+            </div>
+          )}
+
+          {/* Lista de anexos */}
+          {todosAnexos.map((a, i) => (
+            <View key={a.anexoId || i} style={s.anexoCard}>
+              <TouchableOpacity style={{ flex: 1 }} onPress={() => handleAbrirAnexo(a)}>
+                <Text style={s.anexoNome} numberOfLines={1}>📎 {a.nome}</Text>
                 <Text style={{ fontSize: 11, color: C.cinza }}>
-                  {doc.arquivoData
-                    ? `Anexado em ${new Date(doc.arquivoData).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`
-                    : 'Toque para abrir'}
+                  {a.data ? `Anexado em ${new Date(a.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}` : 'Toque para abrir'}
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.anexoRemover} onPress={() => onRemoverAnexo(doc.id)}>
+              <TouchableOpacity style={s.anexoRemover} onPress={() => onRemoverAnexo(doc.id, a.anexoId)}>
                 <Text style={s.obsExcluirTexto}>🗑</Text>
               </TouchableOpacity>
             </View>
-          ) : (
-            <TouchableOpacity style={s.btnAnexar} onPress={handleAnexar}>
-              <Text style={s.btnAnexarTexto}>📎 Anexar arquivo</Text>
-            </TouchableOpacity>
+          ))}
+
+          {totalAnexos === 0 && (
+            <Text style={{ fontSize: 12, color: C.cinza, textAlign: 'center', marginBottom: 8 }}>Nenhum arquivo ainda</Text>
           )}
         </View>
       )}
