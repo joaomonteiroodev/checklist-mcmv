@@ -12,6 +12,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
   onSnapshot,
   query,
   updateDoc,
@@ -654,16 +655,25 @@ function AppPrincipal({ user }: { user: User }) {
       <Modal visible={modalExcluirCliente !== null} animationType="fade" transparent>
         <View style={s.modalFundo}>
           <View style={[s.modalBox, { paddingBottom: 30 }]}>
+            <Text style={{ fontSize: 32, textAlign: 'center', marginBottom: 8 }}>⚠️</Text>
             <Text style={s.modalTitulo}>Excluir cliente?</Text>
-            <Text style={{ color: C.textoSub, fontSize: 14, marginBottom: 8 }}>
-              Tem certeza que deseja excluir <Text style={{ fontWeight: '600' }}>{modalExcluirCliente?.nome}</Text>?
+            <Text style={{ color: C.textoSub, fontSize: 14, marginBottom: 4, textAlign: 'center' }}>
+              Você está prestes a excluir
             </Text>
+            <Text style={{ color: C.texto, fontSize: 15, fontWeight: '700', textAlign: 'center', marginBottom: 8 }}>
+              {modalExcluirCliente?.nome}
+            </Text>
+            <View style={{ backgroundColor: C.erroClaro, borderRadius: 8, padding: 10, marginBottom: 16 }}>
+              <Text style={{ color: C.erro, fontSize: 12, textAlign: 'center' }}>
+                Todos os documentos, observações e anexos serão perdidos permanentemente. Esta ação não pode ser desfeita.
+              </Text>
+            </View>
             <View style={s.modalBotoes}>
               <TouchableOpacity style={s.btnCancelar} onPress={() => setModalExcluirCliente(null)}>
                 <Text style={s.btnCancelarTexto}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[s.btnSalvar, { backgroundColor: C.erro }]} onPress={() => modalExcluirCliente && excluirCliente(modalExcluirCliente)}>
-                <Text style={s.btnSalvarTexto}>Excluir</Text>
+                <Text style={s.btnSalvarTexto}>Sim, excluir</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1056,6 +1066,14 @@ function TelaConfiguracoes({ user, userRole, userNome, userDocId, userGestorId, 
   const [erroSenha, setErroSenha] = useState('');
   const [sucessoSenha, setSucessoSenha] = useState(false);
 
+  // Editar perfil
+  const [modalPerfil, setModalPerfil] = useState(false);
+  const [editNome, setEditNome] = useState('');
+  const [editSobrenome, setEditSobrenome] = useState('');
+  const [salvandoPerfil, setSalvandoPerfil] = useState(false);
+  const [erroPerfil, setErroPerfil] = useState('');
+  const [sucessoPerfil, setSucessoPerfil] = useState(false);
+
   // Notificações
   const [notifAtiva, setNotifAtiva] = useState(false);
   const [notifPermissao, setNotifPermissao] = useState<string>('default');
@@ -1132,6 +1150,11 @@ function TelaConfiguracoes({ user, userRole, userNome, userDocId, userGestorId, 
       if (userDocId) {
         await updateDoc(doc(db, 'usuarios', userDocId), { gestorId });
       }
+      // Atualiza todos os clientes antigos do corretor com o novo gestorId
+      const qClientes = query(collection(db, 'clientes'), where('corretorId', '==', user.uid));
+      const snapshot = await getDocs(qClientes);
+      const atualizacoes = snapshot.docs.map(d => updateDoc(doc(db, 'clientes', d.id), { gestorId }));
+      await Promise.all(atualizacoes);
       setSucessoGestor(true);
       setTimeout(() => { setModalGestor(false); setSucessoGestor(false); }, 1500);
     } catch { setErroGestor('Erro ao salvar. Tente novamente.'); }
@@ -1154,15 +1177,45 @@ function TelaConfiguracoes({ user, userRole, userNome, userDocId, userGestorId, 
     } catch { alert('Erro ao remover. Tente novamente.'); }
   }
 
+  async function salvarPerfil() {
+    if (!editNome.trim()) { setErroPerfil('Digite seu nome.'); return; }
+    setSalvandoPerfil(true); setErroPerfil('');
+    const nomeCompleto = `${editNome.trim()} ${editSobrenome.trim()}`.trim();
+    try {
+      if (userDocId) {
+        await updateDoc(doc(db, 'usuarios', userDocId), {
+          nome: editNome.trim(),
+          sobrenome: editSobrenome.trim(),
+          nomeCompleto,
+        });
+        // Atualiza corretorNome em todos os clientes do usuário
+        const qClientes = query(collection(db, 'clientes'), where('corretorId', '==', user.uid));
+        const snap = await getDocs(qClientes);
+        await Promise.all(snap.docs.map(d => updateDoc(doc(db, 'clientes', d.id), { corretorNome: nomeCompleto })));
+      }
+      setSucessoPerfil(true);
+      setTimeout(() => { setModalPerfil(false); setSucessoPerfil(false); }, 1500);
+    } catch { setErroPerfil('Erro ao salvar. Tente novamente.'); }
+    finally { setSalvandoPerfil(false); }
+  }
+
   const iniciais = userNome ? getIniciais(userNome) : (user.email?.slice(0, 2).toUpperCase() || 'JM');
   const pendentesTotal = clientes.filter(c => c.docs.some(d => !d.entregue)).length;
 
   return (
     <ScrollView style={{ flex: 1, paddingHorizontal: 16, paddingTop: 12 }} contentContainerStyle={{ paddingBottom: 40 }}>
       <View style={s.configPerfil}>
-        <View style={[s.avatar, { width: 56, height: 56, borderRadius: 28 }]}>
+        <TouchableOpacity
+          style={[s.avatar, { width: 56, height: 56, borderRadius: 28 }]}
+          onPress={() => {
+            const partes = userNome.split(' ');
+            setEditNome(partes[0] || '');
+            setEditSobrenome(partes.slice(1).join(' ') || '');
+            setModalPerfil(true);
+          }}
+        >
           <Text style={[s.avatarTexto, { fontSize: 18 }]}>{iniciais}</Text>
-        </View>
+        </TouchableOpacity>
         <View style={{ flex: 1 }}>
           {userNome ? <Text style={{ fontSize: 15, fontWeight: '700', color: C.texto }}>{userNome}</Text> : null}
           <Text style={{ fontSize: 13, color: C.cinza }}>{user.email}</Text>
@@ -1170,6 +1223,17 @@ function TelaConfiguracoes({ user, userRole, userNome, userDocId, userGestorId, 
             <Text style={s.badgeAtivoTexto}>{userRole === 'gestor' ? 'Gestor' : 'Corretor ativo'}</Text>
           </View>
         </View>
+        <TouchableOpacity
+          onPress={() => {
+            const partes = userNome.split(' ');
+            setEditNome(partes[0] || '');
+            setEditSobrenome(partes.slice(1).join(' ') || '');
+            setModalPerfil(true);
+          }}
+          style={{ backgroundColor: C.cinzaClaro, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 }}
+        >
+          <Text style={{ fontSize: 12, color: C.textoSub, fontWeight: '600' }}>✏️ Editar</Text>
+        </TouchableOpacity>
       </View>
 
       <Text style={s.secaoLabel}>CONTA</Text>
@@ -1341,6 +1405,43 @@ function TelaConfiguracoes({ user, userRole, userNome, userDocId, userGestorId, 
       <TouchableOpacity style={s.btnLogout} onPress={() => signOut(auth)}>
         <Text style={s.btnLogoutTexto}>Sair da conta</Text>
       </TouchableOpacity>
+
+      {/* Modal Alterar Senha */}
+      {/* Modal Editar Perfil */}
+      <Modal visible={modalPerfil} animationType="slide" transparent>
+        <View style={s.modalFundo}>
+          <View style={s.modalBox}>
+            <View style={s.modalAlca} />
+            <Text style={s.modalTitulo}>Editar perfil</Text>
+            <Text style={s.label}>Nome</Text>
+            <TextInput
+              style={s.input}
+              placeholder="Ex.: João"
+              value={editNome}
+              onChangeText={setEditNome}
+              placeholderTextColor={C.cinza}
+            />
+            <Text style={s.label}>Sobrenome</Text>
+            <TextInput
+              style={s.input}
+              placeholder="Ex.: Monteiro"
+              value={editSobrenome}
+              onChangeText={setEditSobrenome}
+              placeholderTextColor={C.cinza}
+            />
+            {erroPerfil ? <Text style={{ color: C.erro, fontSize: 13, marginTop: 8 }}>{erroPerfil}</Text> : null}
+            {sucessoPerfil ? <Text style={{ color: C.verdeMedio, fontSize: 13, marginTop: 8 }}>✓ Perfil atualizado!</Text> : null}
+            <View style={s.modalBotoes}>
+              <TouchableOpacity style={s.btnCancelar} onPress={() => { setModalPerfil(false); setErroPerfil(''); }}>
+                <Text style={s.btnCancelarTexto}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[s.btnSalvar, salvandoPerfil && { opacity: 0.6 }]} onPress={salvarPerfil} disabled={salvandoPerfil}>
+                <Text style={s.btnSalvarTexto}>{salvandoPerfil ? 'Salvando...' : 'Salvar'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Modal Alterar Senha */}
       <Modal visible={modalSenha} animationType="slide" transparent>
