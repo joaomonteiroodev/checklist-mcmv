@@ -439,10 +439,37 @@ function AppPrincipal({ user }: { user: User }) {
     return unsubscribe;
   }, [user.uid, userRole]);
 
+  function formatarTelefoneMask(valor: string): string {
+    const nums = valor.replace(/\D/g, '').slice(0, 11);
+    if (nums.length <= 2) return nums.length ? `(${nums}` : '';
+    if (nums.length <= 6) return `(${nums.slice(0, 2)}) ${nums.slice(2)}`;
+    if (nums.length <= 10) return `(${nums.slice(0, 2)}) ${nums.slice(2, 6)}-${nums.slice(6)}`;
+    return `(${nums.slice(0, 2)}) ${nums.slice(2, 7)}-${nums.slice(7)}`;
+  }
+
+  function validarTelefone(tel: string): boolean {
+    const nums = tel.replace(/\D/g, '');
+    return nums.length === 10 || nums.length === 11;
+  }
+
+  function validarEmail(email: string): boolean {
+    if (!email.trim()) return true; // e-mail é opcional
+    const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return regex.test(email.trim());
+  }
+
   async function adicionarCliente() {
-    if (!novoNome.trim() || !novaRenda.trim()) return;
+    if (!novoNome.trim() || !novaRenda.trim()) { alert('Preencha o nome e a renda.'); return; }
+    if (novoTelefone.trim() && !validarTelefone(novoTelefone)) {
+      alert('Telefone inválido. Use o formato (DD) 99999-9999.');
+      return;
+    }
+    if (!validarEmail(novoEmailCliente)) {
+      alert('E-mail inválido. Use um formato como nome@gmail.com ou nome@hotmail.com');
+      return;
+    }
     const renda = parseFloat(novaRenda.replace(',', '.'));
-    if (isNaN(renda) || renda <= 0) return;
+    if (isNaN(renda) || renda <= 0) { alert('Renda inválida.'); return; }
     try {
       await addDoc(collection(db, 'clientes'), {
         nome: novoNome.trim(),
@@ -616,9 +643,31 @@ function AppPrincipal({ user }: { user: User }) {
               <Text style={s.label}>Nome completo</Text>
               <TextInput style={s.input} placeholder="Ex.: Ana Paula Ribeiro" value={novoNome} onChangeText={setNovoNome} placeholderTextColor={C.cinza} />
               <Text style={s.label}>Telefone (WhatsApp)</Text>
-              <TextInput style={s.input} placeholder="(81) 99999-9999" value={novoTelefone} onChangeText={setNovoTelefone} keyboardType="phone-pad" placeholderTextColor={C.cinza} />
+              <TextInput
+                style={s.input}
+                placeholder="(81) 99999-9999"
+                value={novoTelefone}
+                onChangeText={v => setNovoTelefone(formatarTelefoneMask(v))}
+                keyboardType="phone-pad"
+                placeholderTextColor={C.cinza}
+                maxLength={15}
+              />
+              {novoTelefone.length > 0 && !validarTelefone(novoTelefone) && (
+                <Text style={{ color: C.erro, fontSize: 11, marginTop: 3 }}>Formato: (DD) 99999-9999</Text>
+              )}
               <Text style={s.label}>E-mail do cliente</Text>
-              <TextInput style={s.input} placeholder="cliente@email.com" value={novoEmailCliente} onChangeText={setNovoEmailCliente} keyboardType="email-address" autoCapitalize="none" placeholderTextColor={C.cinza} />
+              <TextInput
+                style={s.input}
+                placeholder="cliente@gmail.com"
+                value={novoEmailCliente}
+                onChangeText={setNovoEmailCliente}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                placeholderTextColor={C.cinza}
+              />
+              {novoEmailCliente.length > 0 && !validarEmail(novoEmailCliente) && (
+                <Text style={{ color: C.erro, fontSize: 11, marginTop: 3 }}>E-mail inválido. Ex: nome@gmail.com</Text>
+              )}
               <Text style={s.label}>Empreendimento</Text>
               <TextInput style={s.input} placeholder="Ex.: Mirante Belvedere" value={novoEmpreendimento} onChangeText={setNovoEmpreendimento} placeholderTextColor={C.cinza} />
               <Text style={s.label}>Perfil profissional</Text>
@@ -1512,6 +1561,7 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
   const [enviandoEmail, setEnviandoEmail] = useState(false);
   const [statusModal, setStatusModal] = useState(false);
   const [perfilModal, setPerfilModal] = useState(false);
+  const [confirmarExcluir, setConfirmarExcluir] = useState(false);
 
   const entregues = cliente.docs.filter(d => d.entregue).length;
   const total = cliente.docs.length;
@@ -1629,7 +1679,7 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
           <TouchableOpacity style={s.btnEmail} onPress={() => setEmailModal(true)}>
             <Text style={s.btnEmailTexto}>✉️ Enviar por E-mail</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={s.btnExcluir} onPress={() => onExcluir(cliente)}>
+          <TouchableOpacity style={s.btnExcluir} onPress={() => setConfirmarExcluir(true)}>
             <Text style={s.btnExcluirTexto}>🗑 Excluir cliente</Text>
           </TouchableOpacity>
         </View>
@@ -1653,6 +1703,38 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
               </TouchableOpacity>
               <TouchableOpacity style={[s.btnSalvar, enviandoEmail && { opacity: 0.6 }]} onPress={enviarEmail} disabled={enviandoEmail}>
                 <Text style={s.btnSalvarTexto}>{enviandoEmail ? 'Enviando...' : 'Enviar'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Confirmar Exclusão */}
+      <Modal visible={confirmarExcluir} animationType="fade" transparent>
+        <View style={s.modalFundo}>
+          <View style={[s.modalBox, { paddingBottom: 30 }]}>
+            <Text style={{ fontSize: 32, textAlign: 'center', marginBottom: 8 }}>⚠️</Text>
+            <Text style={s.modalTitulo}>Excluir cliente?</Text>
+            <Text style={{ color: C.textoSub, fontSize: 14, marginBottom: 4, textAlign: 'center' }}>
+              Você está prestes a excluir
+            </Text>
+            <Text style={{ color: C.texto, fontSize: 15, fontWeight: '700', textAlign: 'center', marginBottom: 12 }}>
+              {cliente.nome}
+            </Text>
+            <View style={{ backgroundColor: C.erroClaro, borderRadius: 8, padding: 10, marginBottom: 16 }}>
+              <Text style={{ color: C.erro, fontSize: 12, textAlign: 'center' }}>
+                Todos os documentos, observações e anexos serão perdidos permanentemente. Esta ação não pode ser desfeita.
+              </Text>
+            </View>
+            <View style={s.modalBotoes}>
+              <TouchableOpacity style={s.btnCancelar} onPress={() => setConfirmarExcluir(false)}>
+                <Text style={s.btnCancelarTexto}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.btnSalvar, { backgroundColor: C.erro }]}
+                onPress={() => { setConfirmarExcluir(false); onExcluir(cliente); }}
+              >
+                <Text style={s.btnSalvarTexto}>Sim, excluir</Text>
               </TouchableOpacity>
             </View>
           </View>
