@@ -208,11 +208,6 @@ const STATUS_CORES: Record<StatusCliente, { bg: string; text: string }> = {
   'Reprovado':      { bg: C.erroClaro, text: C.erro },
 };
 
-// ─── EMAILJS ──────────────────────────────────────────────────────────────────
-const EMAILJS_SERVICE_ID = 'service_5kcdmca';
-const EMAILJS_TEMPLATE_ID = 'template_loetntf';
-const EMAILJS_PUBLIC_KEY = 'UTaEmAAnR1rOz-qgQ';
-
 // ─── RAIZ ─────────────────────────────────────────────────────────────────────
 export default function HomeScreen() {
   const [user, setUser] = useState<User | null>(null);
@@ -1608,25 +1603,55 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
     ].filter(l => l !== null).join('\n');
 
     try {
-      const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      // 1. Montar a lista de todos os anexos (novos + formato legado) com referência ao documento pai
+      type AnexoParaEnvio = { anexoId: string; nome: string; tipo: string; docNome: string };
+      const anexosParaBuscar: AnexoParaEnvio[] = [];
+
+      for (const d of cliente.docs) {
+        const anexosDoDoc: Anexo[] = d.anexos && d.anexos.length > 0
+          ? d.anexos
+          : (d.anexoId || d.arquivoNome)
+            ? [{ anexoId: d.anexoId || '', nome: d.arquivoNome || 'Arquivo', tipo: d.arquivoTipo || '', data: d.arquivoData || 0 }]
+            : [];
+
+        for (const a of anexosDoDoc) {
+          if (a.anexoId) {
+            anexosParaBuscar.push({ anexoId: a.anexoId, nome: a.nome, tipo: a.tipo, docNome: d.nome });
+          }
+        }
+      }
+
+      // 2. Buscar o base64 de cada anexo na coleção 'anexos' do Firestore
+      const anexosComBase64 = await Promise.all(
+        anexosParaBuscar.map(async (a) => {
+          try {
+            const snap = await getDoc(firestoreDoc(db, 'anexos', a.anexoId));
+            if (!snap.exists()) return null;
+            const { base64, tipo } = snap.data();
+            return { base64, tipo: tipo || a.tipo, nome: a.nome, docNome: a.docNome };
+          } catch {
+            return null;
+          }
+        })
+      );
+      const anexosValidos = anexosComBase64.filter((a): a is NonNullable<typeof a> => a !== null);
+
+      // 3. Enviar para a Vercel Function (gera PDF com os anexos e envia o e-mail)
+      const res = await fetch('/api/enviar-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          service_id: EMAILJS_SERVICE_ID,
-          template_id: EMAILJS_TEMPLATE_ID,
-          user_id: EMAILJS_PUBLIC_KEY,
-          template_params: {
-            to_email: emailDestino,
-            from_email: userEmail || 'certus@imobiliaria.com',
-            from_name: userEmail?.split('@')[0] || 'Corretor Certus',
-            cliente_nome: cliente.nome,
-            empreendimento: cliente.empreendimento || 'Não informado',
-            corpo,
-          },
+          destinatario: emailDestino,
+          replyTo: userEmail || undefined,
+          assunto: `Documentos — ${cliente.nome} (${cliente.empreendimento || 'Certus'})`,
+          corpoTexto: corpo,
+          anexos: anexosValidos,
         }),
       });
+
+      const data = await res.json().catch(() => ({}));
       if (res.ok) { alert('E-mail enviado com sucesso!'); setEmailModal(false); setEmailDestino(''); }
-      else { alert('Erro ao enviar. Verifique as configurações do EmailJS.'); }
+      else { alert(`Erro ao enviar: ${data?.details || data?.error || 'tente novamente.'}`); }
     } catch { alert('Erro de conexão ao tentar enviar o e-mail.'); }
     finally { setEnviandoEmail(false); }
   }
