@@ -96,6 +96,7 @@ interface Cliente {
   corretorNome?: string;
   gestorId?: string;
   ultimaAtualizacao?: number;
+  temDependente?: boolean;
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -117,53 +118,54 @@ function getDocsPorPerfil(perfil: Perfil): Omit<Documento, 'entregue' | 'observa
     return [
       { id: 1, nome: 'RG e CPF', sub: 'Documento de identificação' },
       { id: 2, nome: 'Certidão de Casamento | Nascimento | Óbito', sub: 'Conforme estado civil' },
-      { id: 3, nome: 'E-mail', sub: 'Endereço de e-mail ativo' },
-      { id: 4, nome: 'Comprovante de renda', sub: 'Últimos 3 holerites' },
-      { id: 5, nome: 'Comprovante de residência', sub: 'Últimos 3 meses' },
-      { id: 6, nome: 'CTPS', sub: 'Carteira de trabalho' },
-      { id: 7, nome: 'Extrato do FGTS', sub: 'Últimos 24 meses' },
-      { id: 8, nome: 'Tela do FGTS', sub: 'Print ou cópia da tela' },
+      { id: 3, nome: 'Comprovante de renda', sub: 'Últimos 3 holerites' },
+      { id: 4, nome: 'Comprovante de residência', sub: 'Últimos 3 meses' },
+      { id: 5, nome: 'CTPS', sub: 'Carteira de trabalho' },
+      { id: 6, nome: 'Extrato do FGTS', sub: 'Últimos 24 meses' },
+      { id: 7, nome: 'Tela do FGTS', sub: 'Print ou cópia da tela' },
     ];
   }
   if (perfil === 'Autônomo') {
     return [
       { id: 1, nome: 'RG e CPF', sub: 'Documento de identificação' },
       { id: 2, nome: 'Certidão de Casamento | Nascimento | Óbito', sub: 'Conforme estado civil' },
-      { id: 3, nome: 'E-mail', sub: 'Endereço de e-mail ativo' },
-      { id: 4, nome: '06 últimos extratos bancários', sub: 'De todas as contas' },
-      { id: 5, nome: '06 últimas faturas', sub: 'Faturas de cartão ou cobranças' },
-      { id: 6, nome: 'Comprovante de residência', sub: 'Últimos 3 meses' },
-      { id: 7, nome: 'CTPS', sub: 'Carteira de trabalho' },
-      { id: 8, nome: 'Extrato do FGTS', sub: 'Últimos 24 meses' },
-      { id: 9, nome: 'Tela do FGTS', sub: 'Print ou cópia da tela' },
-      { id: 10, nome: 'Imposto de renda', sub: 'Se declarar' },
+      { id: 3, nome: '06 últimos extratos bancários', sub: 'De todas as contas' },
+      { id: 4, nome: '06 últimas faturas', sub: 'Faturas de cartão ou cobranças' },
+      { id: 5, nome: 'Comprovante de residência', sub: 'Últimos 3 meses' },
+      { id: 6, nome: 'CTPS', sub: 'Carteira de trabalho' },
+      { id: 7, nome: 'Extrato do FGTS', sub: 'Últimos 24 meses' },
+      { id: 8, nome: 'Tela do FGTS', sub: 'Print ou cópia da tela' },
+      { id: 9, nome: 'Imposto de renda', sub: 'Se declarar' },
     ];
   }
   if (perfil === 'Func. Público') {
     return [
       { id: 1, nome: 'RG e CPF', sub: 'Documento de identificação' },
       { id: 2, nome: 'Certidão de Casamento | Nascimento | Óbito', sub: 'Conforme estado civil' },
-      { id: 3, nome: 'E-mail', sub: 'Endereço de e-mail ativo' },
-      { id: 4, nome: '03 últimos comprovantes de renda', sub: 'Contracheques' },
-      { id: 5, nome: 'Contrato ou termo de posse', sub: 'Documento de vínculo com o órgão' },
-      { id: 6, nome: 'CTPS', sub: 'Carteira de trabalho' },
-      { id: 7, nome: 'Comprovante de residência', sub: 'Últimos 3 meses' },
+      { id: 3, nome: '03 últimos comprovantes de renda', sub: 'Contracheques' },
+      { id: 4, nome: 'Contrato ou termo de posse', sub: 'Documento de vínculo com o órgão' },
+      { id: 5, nome: 'CTPS', sub: 'Carteira de trabalho' },
+      { id: 6, nome: 'Comprovante de residência', sub: 'Últimos 3 meses' },
       { id: 8, nome: 'Imposto de renda', sub: 'Se declarar' },
     ];
   }
   return [
     { id: 1, nome: 'RG e CPF', sub: 'Documento de identificação' },
     { id: 2, nome: 'Certidão de Casamento | Nascimento | Óbito', sub: 'Conforme estado civil' },
-    { id: 3, nome: 'E-mail', sub: 'Endereço de e-mail ativo' },
-    { id: 4, nome: 'Comprovante de residência', sub: 'Últimos 3 meses' },
-    { id: 5, nome: 'CTPS', sub: 'Carteira de trabalho' },
-    { id: 6, nome: 'Extrato do FGTS', sub: 'Últimos 24 meses' },
-    { id: 7, nome: 'Tela do FGTS', sub: 'Print ou cópia da tela' },
+    { id: 3, nome: 'Comprovante de residência', sub: 'Últimos 3 meses' },
+    { id: 4, nome: 'CTPS', sub: 'Carteira de trabalho' },
+    { id: 5, nome: 'Extrato do FGTS', sub: 'Últimos 24 meses' },
+    { id: 6, nome: 'Tela do FGTS', sub: 'Print ou cópia da tela' },
   ];
 }
 
-function inicializarDocs(perfil: Perfil): Documento[] {
-  return getDocsPorPerfil(perfil).map(d => ({ ...d, entregue: false, observacao: '' }));
+function inicializarDocs(perfil: Perfil, temDependente?: boolean): Documento[] {
+  const base = getDocsPorPerfil(perfil).map(d => ({ ...d, entregue: false, observacao: '' }));
+  if (temDependente) {
+    const maxId = Math.max(...base.map(d => d.id));
+    base.push({ id: maxId + 1, nome: 'Documentos do dependente', sub: 'RG, CPF e certidão', entregue: false, observacao: '' });
+  }
+  return base;
 }
 
 function formatarTelefoneWA(tel: string): string {
@@ -381,6 +383,15 @@ function AppPrincipal({ user }: { user: User }) {
   const [novoNome, setNovoNome] = useState('');
   const [novoTelefone, setNovoTelefone] = useState('');
   const [novoEmailCliente, setNovoEmailCliente] = useState('');
+  const [novoDependente, setNovoDependente] = useState(false);
+  const [modalEditarCliente, setModalEditarCliente] = useState<Cliente | null>(null);
+  const [editNome, setEditNome] = useState('');
+  const [editTelefone, setEditTelefone] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editRenda, setEditRenda] = useState('');
+  const [editEmpreendimento, setEditEmpreendimento] = useState('');
+  const [editPerfil, setEditPerfil] = useState<Perfil>('CLT');
+  const [editDependente, setEditDependente] = useState(false);
   const [novoPerfil, setNovoPerfil] = useState<Perfil>('CLT');
   const [novaRenda, setNovaRenda] = useState('');
   const [novoEmpreendimento, setNovoEmpreendimento] = useState('');
@@ -485,7 +496,8 @@ function AppPrincipal({ user }: { user: User }) {
         faixa: calcularFaixa(renda),
         empreendimento: novoEmpreendimento.trim(),
         status: 'Em atendimento' as StatusCliente,
-        docs: inicializarDocs(novoPerfil),
+        docs: inicializarDocs(novoPerfil, novoDependente),
+        temDependente: novoDependente,
         corretorId: user.uid,
         corretorEmail: user.email,
         corretorNome: userNomeCompleto || user.email,
@@ -495,6 +507,7 @@ function AppPrincipal({ user }: { user: User }) {
     } catch { alert('Erro ao salvar cliente.'); }
     setNovoNome(''); setNovoTelefone(''); setNovoEmailCliente('');
     setNovoPerfil('CLT'); setNovaRenda(''); setNovoEmpreendimento('');
+    setNovoDependente(false);
     setModalAberto(false);
   }
 
@@ -692,6 +705,20 @@ function AppPrincipal({ user }: { user: User }) {
                   </Text>
                 </View>
               )}
+              <Text style={s.label}>Dependente</Text>
+              <View style={s.opcoes}>
+                <TouchableOpacity style={[s.opcao, !novoDependente && s.opcaoAtiva]} onPress={() => setNovoDependente(false)}>
+                  <Text style={[s.opcaoTexto, !novoDependente && s.opcaoTextoAtivo]}>Sem dependente</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[s.opcao, novoDependente && s.opcaoAtiva]} onPress={() => setNovoDependente(true)}>
+                  <Text style={[s.opcaoTexto, novoDependente && s.opcaoTextoAtivo]}>Com dependente</Text>
+                </TouchableOpacity>
+              </View>
+              {novoDependente && (
+                <View style={{ backgroundColor: C.verdeClaro, borderRadius: 10, padding: 10, marginTop: 6 }}>
+                  <Text style={{ fontSize: 12, color: C.verdeMedio }}>📋 Será adicionado o item "Documentos do dependente" ao checklist.</Text>
+                </View>
+              )}
               <View style={s.modalBotoes}>
                 <TouchableOpacity style={s.btnCancelar} onPress={() => setModalAberto(false)}>
                   <Text style={s.btnCancelarTexto}>Cancelar</Text>
@@ -704,6 +731,87 @@ function AppPrincipal({ user }: { user: User }) {
           </ScrollView>
         </View>
       </Modal>
+
+      {/* Modal Editar Cliente */}
+      {modalEditarCliente && (
+        <Modal visible animationType="slide" transparent>
+          <View style={s.modalFundo}>
+            <ScrollView>
+              <View style={[s.modalBox, { marginTop: 60 }]}>
+                <View style={s.modalAlca} />
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <Text style={s.modalTitulo}>Editar Cliente</Text>
+                  <TouchableOpacity onPress={() => setModalEditarCliente(null)} style={s.modalFechar}>
+                    <Text style={{ color: C.cinza, fontSize: 16 }}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={s.label}>Nome completo</Text>
+                <TextInput style={s.input} value={editNome} onChangeText={setEditNome} placeholderTextColor={C.cinza} />
+                <Text style={s.label}>Telefone (WhatsApp)</Text>
+                <TextInput style={s.input} value={editTelefone} onChangeText={v => setEditTelefone(formatarTelefoneMask(v))} keyboardType="phone-pad" maxLength={15} placeholderTextColor={C.cinza} />
+                <Text style={s.label}>E-mail do cliente</Text>
+                <TextInput style={s.input} value={editEmail} onChangeText={setEditEmail} keyboardType="email-address" autoCapitalize="none" placeholderTextColor={C.cinza} />
+                <Text style={s.label}>Empreendimento</Text>
+                <TextInput style={s.input} value={editEmpreendimento} onChangeText={setEditEmpreendimento} placeholderTextColor={C.cinza} />
+                <Text style={s.label}>Perfil profissional</Text>
+                <View style={s.opcoes}>
+                  {(['CLT', 'Autônomo', 'Func. Público'] as Perfil[]).map(p => (
+                    <TouchableOpacity key={p} style={[s.opcao, editPerfil === p && s.opcaoAtiva]} onPress={() => setEditPerfil(p)}>
+                      <Text style={[s.opcaoTexto, editPerfil === p && s.opcaoTextoAtivo]}>{p}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <Text style={s.label}>Renda familiar (R$)</Text>
+                <TextInput style={s.input} value={editRenda} onChangeText={setEditRenda} keyboardType="numeric" placeholderTextColor={C.cinza} />
+                <Text style={s.label}>Dependente</Text>
+                <View style={s.opcoes}>
+                  <TouchableOpacity style={[s.opcao, !editDependente && s.opcaoAtiva]} onPress={() => setEditDependente(false)}>
+                    <Text style={[s.opcaoTexto, !editDependente && s.opcaoTextoAtivo]}>Sem dependente</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[s.opcao, editDependente && s.opcaoAtiva]} onPress={() => setEditDependente(true)}>
+                    <Text style={[s.opcaoTexto, editDependente && s.opcaoTextoAtivo]}>Com dependente</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={s.modalBotoes}>
+                  <TouchableOpacity style={s.btnCancelar} onPress={() => setModalEditarCliente(null)}>
+                    <Text style={s.btnCancelarTexto}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={s.btnSalvar} onPress={async () => {
+                    const renda = parseFloat(editRenda.replace(',', '.'));
+                    if (!editNome.trim() || isNaN(renda) || renda <= 0) { alert('Verifique nome e renda.'); return; }
+                    const clienteAtualizado = {
+                      ...modalEditarCliente,
+                      nome: editNome.trim(),
+                      telefone: editTelefone.trim(),
+                      email: editEmail.trim(),
+                      empreendimento: editEmpreendimento.trim(),
+                      perfil: editPerfil,
+                      renda,
+                      faixa: calcularFaixa(renda),
+                      temDependente: editDependente,
+                    };
+                    // Se mudou perfil ou dependente, reconstrói checklist mantendo entregues
+                    const perfilMudou = editPerfil !== modalEditarCliente.perfil;
+                    const dependenteMudou = editDependente !== (modalEditarCliente.temDependente || false);
+                    if (perfilMudou || dependenteMudou) {
+                      const novaBase = inicializarDocs(editPerfil, editDependente);
+                      const docsAtualizados = novaBase.map(nd => {
+                        const antigo = modalEditarCliente.docs.find(d => d.nome === nd.nome);
+                        return antigo ? { ...nd, entregue: antigo.entregue, observacao: antigo.observacao, anexos: antigo.anexos, anexoId: antigo.anexoId } : nd;
+                      });
+                      clienteAtualizado.docs = docsAtualizados;
+                    }
+                    await atualizarCliente(clienteAtualizado);
+                    setModalEditarCliente(null);
+                  }}>
+                    <Text style={s.btnSalvarTexto}>Salvar</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </Modal>
+      )}
 
       {/* Modal Excluir */}
       <Modal visible={modalExcluirCliente !== null} animationType="fade" transparent>
@@ -1567,6 +1675,14 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
   const [statusModal, setStatusModal] = useState(false);
   const [perfilModal, setPerfilModal] = useState(false);
   const [confirmarExcluir, setConfirmarExcluir] = useState(false);
+  const [editarModal, setEditarModal] = useState(false);
+  const [editNomeLocal, setEditNomeLocal] = useState(cliente.nome);
+  const [editTelefoneLocal, setEditTelefoneLocal] = useState(cliente.telefone);
+  const [editEmailLocal, setEditEmailLocal] = useState(cliente.email || '');
+  const [editRendaLocal, setEditRendaLocal] = useState(String(cliente.renda));
+  const [editEmpreendimentoLocal, setEditEmpreendimentoLocal] = useState(cliente.empreendimento || '');
+  const [editPerfilLocal, setEditPerfilLocal] = useState<Perfil>(cliente.perfil);
+  const [editDependenteLocal, setEditDependenteLocal] = useState(cliente.temDependente || false);
 
   const entregues = cliente.docs.filter(d => d.entregue).length;
   const total = cliente.docs.length;
@@ -1603,22 +1719,11 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
     ].filter(l => l !== null).join('\n');
 
     try {
-      // 1. Montar lista de anexos resolvidos (novos + formato legado)
-      type AnexoResolvido = { base64: string; tipo: string; nome: string; docNome: string };
-      const anexosValidos: AnexoResolvido[] = [];
+      // 1. Montar a lista de todos os anexos (novos + formato legado) com referência ao documento pai
+      type AnexoParaEnvio = { anexoId: string; nome: string; tipo: string; docNome: string };
+      const anexosParaBuscar: AnexoParaEnvio[] = [];
 
       for (const d of cliente.docs) {
-        // Caso legado: base64 embutido direto no documento do cliente
-        if ((d as any).arquivoBase64 && (!d.anexos || d.anexos.length === 0) && !d.anexoId) {
-          anexosValidos.push({
-            base64: (d as any).arquivoBase64,
-            tipo: d.arquivoTipo || 'image/jpeg',
-            nome: d.arquivoNome || 'Arquivo',
-            docNome: d.nome,
-          });
-          continue;
-        }
-
         const anexosDoDoc: Anexo[] = d.anexos && d.anexos.length > 0
           ? d.anexos
           : (d.anexoId || d.arquivoNome)
@@ -1626,15 +1731,26 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
             : [];
 
         for (const a of anexosDoDoc) {
-          if (!a.anexoId) continue;
-          try {
-            const snap = await getDoc(firestoreDoc(db, 'anexos', a.anexoId));
-            if (!snap.exists()) continue;
-            const { base64, tipo } = snap.data();
-            if (base64) anexosValidos.push({ base64, tipo: tipo || a.tipo, nome: a.nome, docNome: d.nome });
-          } catch { /* pula anexo com erro */ }
+          if (a.anexoId) {
+            anexosParaBuscar.push({ anexoId: a.anexoId, nome: a.nome, tipo: a.tipo, docNome: d.nome });
+          }
         }
       }
+
+      // 2. Buscar o base64 de cada anexo na coleção 'anexos' do Firestore
+      const anexosComBase64 = await Promise.all(
+        anexosParaBuscar.map(async (a) => {
+          try {
+            const snap = await getDoc(firestoreDoc(db, 'anexos', a.anexoId));
+            if (!snap.exists()) return null;
+            const { base64, tipo } = snap.data();
+            return { base64, tipo: tipo || a.tipo, nome: a.nome, docNome: a.docNome };
+          } catch {
+            return null;
+          }
+        })
+      );
+      const anexosValidos = anexosComBase64.filter((a): a is NonNullable<typeof a> => a !== null);
 
       // 3. Enviar para a Vercel Function (gera PDF com os anexos e envia o e-mail)
       const res = await fetch('/api/enviar-email', {
@@ -1679,7 +1795,7 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
       const novoAnexo: Anexo = { anexoId: anexoRef.id, nome, tipo, data };
       const novosDocs = cliente.docs.map(d =>
         d.id === id
-          ? { ...d, anexos: [...(d.anexos || []), novoAnexo], arquivoNome: nome, arquivoData: data }
+          ? { ...d, entregue: true, anexos: [...(d.anexos || []), novoAnexo], arquivoNome: nome, arquivoData: data }
           : d
       );
       onAtualizar({ ...cliente, docs: novosDocs });
@@ -1688,35 +1804,21 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
 
   async function removerAnexo(docId: number, anexoId: string) {
     try {
-      // 1. Remove o documento de anexo da coleção 'anexos'
       if (anexoId) await deleteDoc(firestoreDoc(db, 'anexos', anexoId));
-
-      // 2. Atualiza a lista local de anexos do documento
       const novosDocs = cliente.docs.map(d => {
         if (d.id !== docId) return d;
         const novosAnexos = (d.anexos || []).filter(a => a.anexoId !== anexoId);
-        // Remove também campos legados se era o único anexo
         const { arquivoBase64: _b, arquivoNome: _n, arquivoTipo: _t, arquivoData: _d, anexoId: _id, ...resto } = d as any;
+        const entregue = novosAnexos.length > 0 ? d.entregue : false;
         return {
           ...resto,
-          id: d.id,
-          nome: d.nome,
-          sub: d.sub,
-          entregue: d.entregue,
-          observacao: d.observacao,
+          id: d.id, nome: d.nome, sub: d.sub, entregue, observacao: d.observacao,
           anexos: novosAnexos,
           ...(novosAnexos.length > 0 ? { arquivoNome: novosAnexos[0].nome, arquivoData: novosAnexos[0].data } : {}),
         };
       });
-
-      // 3. Salva no Firestore sem base64 embutido (apenas metadados)
       const docsParaSalvar = novosDocs.map(({ arquivoBase64: _b, ...d }: any) => d);
-      await updateDoc(firestoreDoc(db, 'clientes', cliente.id), {
-        docs: docsParaSalvar,
-        ultimaAtualizacao: Date.now(),
-      });
-
-      // 4. Atualiza estado local
+      await updateDoc(firestoreDoc(db, 'clientes', cliente.id), { docs: docsParaSalvar, ultimaAtualizacao: Date.now() });
       onAtualizar({ ...cliente, docs: novosDocs });
     } catch (e) {
       console.error('Erro ao remover anexo:', e);
@@ -1783,11 +1885,107 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
           <TouchableOpacity style={s.btnEmail} onPress={() => setEmailModal(true)}>
             <Text style={s.btnEmailTexto}>✉️ Enviar por E-mail</Text>
           </TouchableOpacity>
+          <TouchableOpacity style={[s.btnCancelar, { marginBottom: 0 }]} onPress={() => {
+            setEditNomeLocal(cliente.nome);
+            setEditTelefoneLocal(cliente.telefone);
+            setEditEmailLocal(cliente.email || '');
+            setEditRendaLocal(String(cliente.renda));
+            setEditEmpreendimentoLocal(cliente.empreendimento || '');
+            setEditPerfilLocal(cliente.perfil);
+            setEditDependenteLocal(cliente.temDependente || false);
+            setEditarModal(true);
+          }}>
+            <Text style={s.btnCancelarTexto}>✏️ Editar dados</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={s.btnExcluir} onPress={() => setConfirmarExcluir(true)}>
             <Text style={s.btnExcluirTexto}>🗑 Excluir cliente</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Modal Editar Dados do Cliente */}
+      <Modal visible={editarModal} animationType="slide" transparent>
+        <View style={s.modalFundo}>
+          <ScrollView>
+            <View style={[s.modalBox, { marginTop: 60 }]}>
+              <View style={s.modalAlca} />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <Text style={s.modalTitulo}>Editar Cliente</Text>
+                <TouchableOpacity onPress={() => setEditarModal(false)} style={s.modalFechar}>
+                  <Text style={{ color: C.cinza, fontSize: 16 }}>✕</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={s.label}>Nome completo</Text>
+              <TextInput style={s.input} value={editNomeLocal} onChangeText={setEditNomeLocal} placeholderTextColor={C.cinza} />
+              <Text style={s.label}>Telefone (WhatsApp)</Text>
+              <TextInput style={s.input} value={editTelefoneLocal} onChangeText={v => setEditTelefoneLocal(v.replace(/\D/g, '').slice(0,11))} keyboardType="phone-pad" placeholderTextColor={C.cinza} />
+              <Text style={s.label}>E-mail do cliente</Text>
+              <TextInput style={s.input} value={editEmailLocal} onChangeText={setEditEmailLocal} keyboardType="email-address" autoCapitalize="none" placeholderTextColor={C.cinza} />
+              <Text style={s.label}>Empreendimento</Text>
+              <TextInput style={s.input} value={editEmpreendimentoLocal} onChangeText={setEditEmpreendimentoLocal} placeholderTextColor={C.cinza} />
+              <Text style={s.label}>Perfil profissional</Text>
+              <View style={s.opcoes}>
+                {(['CLT', 'Autônomo', 'Func. Público'] as Perfil[]).map(p => (
+                  <TouchableOpacity key={p} style={[s.opcao, editPerfilLocal === p && s.opcaoAtiva]} onPress={() => setEditPerfilLocal(p)}>
+                    <Text style={[s.opcaoTexto, editPerfilLocal === p && s.opcaoTextoAtivo]}>{p}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={s.label}>Renda familiar (R$)</Text>
+              <TextInput style={s.input} value={editRendaLocal} onChangeText={setEditRendaLocal} keyboardType="numeric" placeholderTextColor={C.cinza} />
+              <Text style={s.label}>Dependente</Text>
+              <View style={s.opcoes}>
+                <TouchableOpacity style={[s.opcao, !editDependenteLocal && s.opcaoAtiva]} onPress={() => setEditDependenteLocal(false)}>
+                  <Text style={[s.opcaoTexto, !editDependenteLocal && s.opcaoTextoAtivo]}>Sem dependente</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[s.opcao, editDependenteLocal && s.opcaoAtiva]} onPress={() => setEditDependenteLocal(true)}>
+                  <Text style={[s.opcaoTexto, editDependenteLocal && s.opcaoTextoAtivo]}>Com dependente</Text>
+                </TouchableOpacity>
+              </View>
+              {(editPerfilLocal !== cliente.perfil || editDependenteLocal !== (cliente.temDependente || false)) && (
+                <View style={{ backgroundColor: '#FFF3E0', borderRadius: 10, padding: 10, marginTop: 6 }}>
+                  <Text style={{ fontSize: 12, color: C.laranja }}>⚠️ Ao mudar perfil ou dependente, o checklist será reconstruído. Documentos já entregues e observações serão preservados.</Text>
+                </View>
+              )}
+              <View style={s.modalBotoes}>
+                <TouchableOpacity style={s.btnCancelar} onPress={() => setEditarModal(false)}>
+                  <Text style={s.btnCancelarTexto}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={s.btnSalvar} onPress={async () => {
+                  const renda = parseFloat(editRendaLocal.replace(',', '.'));
+                  if (!editNomeLocal.trim() || isNaN(renda) || renda <= 0) { alert('Verifique nome e renda.'); return; }
+                  const perfilMudou = editPerfilLocal !== cliente.perfil;
+                  const dependenteMudou = editDependenteLocal !== (cliente.temDependente || false);
+                  let novosDocs = cliente.docs;
+                  if (perfilMudou || dependenteMudou) {
+                    const novaBase = inicializarDocs(editPerfilLocal, editDependenteLocal);
+                    novosDocs = novaBase.map(nd => {
+                      const antigo = cliente.docs.find(d => d.nome === nd.nome);
+                      return antigo ? { ...nd, entregue: antigo.entregue, observacao: antigo.observacao, anexos: antigo.anexos, anexoId: antigo.anexoId } : nd;
+                    });
+                  }
+                  const clienteAtualizado = {
+                    ...cliente,
+                    nome: editNomeLocal.trim(),
+                    telefone: editTelefoneLocal.trim(),
+                    email: editEmailLocal.trim(),
+                    empreendimento: editEmpreendimentoLocal.trim(),
+                    perfil: editPerfilLocal,
+                    renda,
+                    faixa: calcularFaixa(renda),
+                    temDependente: editDependenteLocal,
+                    docs: novosDocs,
+                  };
+                  await onAtualizar(clienteAtualizado);
+                  setEditarModal(false);
+                }}>
+                  <Text style={s.btnSalvarTexto}>Salvar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
 
       {/* Modal E-mail */}
       <Modal visible={emailModal} animationType="slide" transparent>
@@ -2084,30 +2282,7 @@ function DocItem({ doc, onToggle, onSalvarObs, onSalvarAnexo, onRemoverAnexo }: 
 
       {expandido && (
         <View style={s.obsBox}>
-          {/* Observação */}
-          <Text style={s.obsLabel}>Observação</Text>
-          <TextInput
-            style={s.obsInput}
-            placeholder="Ex: Cliente vai enviar na segunda-feira"
-            value={obs}
-            onChangeText={t => { setObs(t); setSalvo(false); }}
-            multiline
-            placeholderTextColor={C.cinza}
-          />
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-            <TouchableOpacity style={s.obsExcluir} onPress={handleExcluirObs}>
-              <Text style={s.obsExcluirTexto}>🗑 Excluir</Text>
-            </TouchableOpacity>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              {salvo && <Text style={{ fontSize: 12, color: C.verdeMedio, fontWeight: '500' }}>✓ Salvo</Text>}
-              <TouchableOpacity style={s.obsSalvar} onPress={handleSalvar}>
-                <Text style={s.obsSalvarTexto}>Salvar</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Anexos */}
-          <View style={{ height: 1, backgroundColor: C.cinzaBorda, marginVertical: 12 }} />
+          {/* Anexos — aparece primeiro */}
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <Text style={s.obsLabel}>Anexos {totalAnexos > 0 ? `(${totalAnexos})` : ''}</Text>
             <TouchableOpacity onPress={handleAnexar} style={{ backgroundColor: C.verdeClaro, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
@@ -2157,6 +2332,29 @@ function DocItem({ doc, onToggle, onSalvarObs, onSalvarAnexo, onRemoverAnexo }: 
           {totalAnexos === 0 && (
             <Text style={{ fontSize: 12, color: C.cinza, textAlign: 'center', marginBottom: 8 }}>Nenhum arquivo ainda</Text>
           )}
+
+          {/* Observação — aparece depois */}
+          <View style={{ height: 1, backgroundColor: C.cinzaBorda, marginVertical: 12 }} />
+          <Text style={s.obsLabel}>Observação</Text>
+          <TextInput
+            style={s.obsInput}
+            placeholder="Ex: Cliente vai enviar na segunda-feira"
+            value={obs}
+            onChangeText={t => { setObs(t); setSalvo(false); }}
+            multiline
+            placeholderTextColor={C.cinza}
+          />
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+            <TouchableOpacity style={s.obsExcluir} onPress={handleExcluirObs}>
+              <Text style={s.obsExcluirTexto}>🗑 Excluir</Text>
+            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              {salvo && <Text style={{ fontSize: 12, color: C.verdeMedio, fontWeight: '500' }}>✓ Salvo</Text>}
+              <TouchableOpacity style={s.obsSalvar} onPress={handleSalvar}>
+                <Text style={s.obsSalvarTexto}>Salvar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       )}
     </View>
