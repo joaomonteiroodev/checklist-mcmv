@@ -214,6 +214,34 @@ const STATUS_CORES: Record<StatusCliente, { bg: string; text: string }> = {
 export default function HomeScreen() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [arquivosCompartilhados, setArquivosCompartilhados] = useState<any[]>([]);
+
+  useEffect(() => {
+    // Registrar service worker para Share Target
+    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+
+    // Verificar se há arquivos compartilhados pendentes
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('shared') === '1') {
+        (async () => {
+          try {
+            const cache = await (window as any).caches?.open('certus-v1');
+            const res = await cache?.match('/share-pending');
+            if (res) {
+              const arquivos = await res.json();
+              setArquivosCompartilhados(arquivos);
+              await cache.delete('/share-pending');
+              // Limpa o ?shared=1 da URL
+              window.history.replaceState({}, '', '/');
+            }
+          } catch {}
+        })();
+      }
+    }
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
@@ -232,7 +260,7 @@ export default function HomeScreen() {
   }
 
   if (!user) return <LoginScreen />;
-  return <AppPrincipal user={user} />;
+  return <AppPrincipal user={user} arquivosCompartilhados={arquivosCompartilhados} onLimparCompartilhados={() => setArquivosCompartilhados([])} />;
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
@@ -364,7 +392,7 @@ function LoginScreen() {
 }
 
 // ─── APP PRINCIPAL ────────────────────────────────────────────────────────────
-function AppPrincipal({ user }: { user: User }) {
+function AppPrincipal({ user, arquivosCompartilhados, onLimparCompartilhados }: { user: User; arquivosCompartilhados: any[]; onLimparCompartilhados: () => void }) {
   const [tela, setTela] = useState<'lista' | 'checklist'>('lista');
   const [abaAtiva, setAbaAtiva] = useState<Aba>('clientes');
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -397,6 +425,16 @@ function AppPrincipal({ user }: { user: User }) {
   const [novoEmpreendimento, setNovoEmpreendimento] = useState('');
   const [modalExcluirCliente, setModalExcluirCliente] = useState<Cliente | null>(null);
   const [membrosEquipe, setMembrosEquipe] = useState<any[]>([]);
+  const [modalShareTarget, setModalShareTarget] = useState(false);
+  const [shareClienteSelecionado, setShareClienteSelecionado] = useState<Cliente | null>(null);
+  const [shareDocSelecionado, setShareDocSelecionado] = useState<number | null>(null);
+
+  // Abre modal de seleção quando há arquivos compartilhados
+  useEffect(() => {
+    if (arquivosCompartilhados.length > 0 && !carregando) {
+      setModalShareTarget(true);
+    }
+  }, [arquivosCompartilhados, carregando]);
 
   const faixaPreview = novaRenda ? calcularFaixa(parseFloat(novaRenda.replace(',', '.'))) : null;
 
@@ -520,8 +558,9 @@ function AppPrincipal({ user }: { user: User }) {
     const { id, ...dados } = clienteAtualizado;
     setClienteSelecionado(clienteAtualizado);
     try {
-      await updateDoc(firestoreDoc(db, 'clientes', id), { ...dados, ultimaAtualizacao: Date.now() });
-    } catch { alert('Erro ao salvar.'); }
+      const docsLimpos = (dados.docs || []).map(({ arquivoBase64: _b, ...d }: any) => d);
+      await updateDoc(firestoreDoc(db, 'clientes', id), { ...dados, docs: docsLimpos, ultimaAtualizacao: Date.now() });
+    } catch (e) { console.error(e); alert('Erro ao salvar.'); }
   }
 
   // Filtros
@@ -812,6 +851,103 @@ function AppPrincipal({ user }: { user: User }) {
           </View>
         </Modal>
       )}
+
+      {/* Modal Share Target — selecionar cliente e documento */}
+      <Modal visible={modalShareTarget} animationType="slide" transparent>
+        <View style={s.modalFundo}>
+          <ScrollView>
+            <View style={[s.modalBox, { marginTop: 60 }]}>
+              <View style={s.modalAlca} />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <Text style={s.modalTitulo}>📎 {arquivosCompartilhados.length} arquivo{arquivosCompartilhados.length > 1 ? 's' : ''} recebido{arquivosCompartilhados.length > 1 ? 's' : ''}</Text>
+                <TouchableOpacity onPress={() => { setModalShareTarget(false); onLimparCompartilhados(); setShareClienteSelecionado(null); setShareDocSelecionado(null); }} style={s.modalFechar}>
+                  <Text style={{ color: C.cinza, fontSize: 16 }}>✕</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={[s.label, { marginTop: 0 }]}>Selecione o cliente</Text>
+              <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled>
+                {clientes.map(c => (
+                  <TouchableOpacity
+                    key={c.id}
+                    style={[{ padding: 12, borderRadius: 12, marginBottom: 6, borderWidth: 1 },
+                      shareClienteSelecionado?.id === c.id
+                        ? { backgroundColor: C.verdeClaro, borderColor: C.verdeMedio }
+                        : { backgroundColor: C.cinzaClaro, borderColor: 'transparent' }
+                    ]}
+                    onPress={() => { setShareClienteSelecionado(c); setShareDocSelecionado(null); }}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: C.texto }}>{c.nome}</Text>
+                    <Text style={{ fontSize: 11, color: C.cinza }}>{c.perfil} · {c.empreendimento || getLabelFaixa(c.faixa)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {shareClienteSelecionado && (
+                <>
+                  <Text style={s.label}>Selecione o documento</Text>
+                  <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled>
+                    {shareClienteSelecionado.docs.map(d => (
+                      <TouchableOpacity
+                        key={d.id}
+                        style={[{ padding: 12, borderRadius: 12, marginBottom: 6, borderWidth: 1 },
+                          shareDocSelecionado === d.id
+                            ? { backgroundColor: C.verdeClaro, borderColor: C.verdeMedio }
+                            : { backgroundColor: C.cinzaClaro, borderColor: 'transparent' }
+                        ]}
+                        onPress={() => setShareDocSelecionado(d.id)}
+                      >
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: C.texto }}>{d.nome}</Text>
+                        <Text style={{ fontSize: 11, color: d.entregue ? C.verdeMedio : C.cinza }}>{d.entregue ? '✓ Entregue' : 'Pendente'}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </>
+              )}
+
+              <View style={s.modalBotoes}>
+                <TouchableOpacity style={s.btnCancelar} onPress={() => { setModalShareTarget(false); onLimparCompartilhados(); setShareClienteSelecionado(null); setShareDocSelecionado(null); }}>
+                  <Text style={s.btnCancelarTexto}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[s.btnSalvar, (!shareClienteSelecionado || shareDocSelecionado === null) && { opacity: 0.4 }]}
+                  disabled={!shareClienteSelecionado || shareDocSelecionado === null}
+                  onPress={async () => {
+                    if (!shareClienteSelecionado || shareDocSelecionado === null) return;
+                    try {
+                      for (const arq of arquivosCompartilhados) {
+                        const anexoRef = await addDoc(collection(db, 'anexos'), {
+                          clienteId: shareClienteSelecionado.id,
+                          docId: shareDocSelecionado,
+                          base64: arq.base64,
+                          nome: arq.nome,
+                          tipo: arq.tipo,
+                          data: arq.data,
+                        });
+                        const novoAnexo = { anexoId: anexoRef.id, nome: arq.nome, tipo: arq.tipo, data: arq.data };
+                        const novosDocs = shareClienteSelecionado.docs.map(d =>
+                          d.id === shareDocSelecionado
+                            ? { ...d, entregue: true, anexos: [...(d.anexos || []), novoAnexo] }
+                            : d
+                        );
+                        const docsLimpos = novosDocs.map(({ arquivoBase64: _b, ...d }: any) => d);
+                        await updateDoc(firestoreDoc(db, 'clientes', shareClienteSelecionado.id), { docs: docsLimpos, ultimaAtualizacao: Date.now() });
+                      }
+                      alert(`${arquivosCompartilhados.length} arquivo${arquivosCompartilhados.length > 1 ? 's salvo' : ' salvo'} em ${shareClienteSelecionado.nome}!`);
+                      setModalShareTarget(false);
+                      onLimparCompartilhados();
+                      setShareClienteSelecionado(null);
+                      setShareDocSelecionado(null);
+                    } catch { alert('Erro ao salvar arquivos.'); }
+                  }}
+                >
+                  <Text style={s.btnSalvarTexto}>Salvar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
 
       {/* Modal Excluir */}
       <Modal visible={modalExcluirCliente !== null} animationType="fade" transparent>
