@@ -1603,11 +1603,22 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
     ].filter(l => l !== null).join('\n');
 
     try {
-      // 1. Montar a lista de todos os anexos (novos + formato legado) com referência ao documento pai
-      type AnexoParaEnvio = { anexoId: string; nome: string; tipo: string; docNome: string };
-      const anexosParaBuscar: AnexoParaEnvio[] = [];
+      // 1. Montar lista de anexos resolvidos (novos + formato legado)
+      type AnexoResolvido = { base64: string; tipo: string; nome: string; docNome: string };
+      const anexosValidos: AnexoResolvido[] = [];
 
       for (const d of cliente.docs) {
+        // Caso legado: base64 embutido direto no documento do cliente
+        if ((d as any).arquivoBase64 && (!d.anexos || d.anexos.length === 0) && !d.anexoId) {
+          anexosValidos.push({
+            base64: (d as any).arquivoBase64,
+            tipo: d.arquivoTipo || 'image/jpeg',
+            nome: d.arquivoNome || 'Arquivo',
+            docNome: d.nome,
+          });
+          continue;
+        }
+
         const anexosDoDoc: Anexo[] = d.anexos && d.anexos.length > 0
           ? d.anexos
           : (d.anexoId || d.arquivoNome)
@@ -1615,26 +1626,15 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
             : [];
 
         for (const a of anexosDoDoc) {
-          if (a.anexoId) {
-            anexosParaBuscar.push({ anexoId: a.anexoId, nome: a.nome, tipo: a.tipo, docNome: d.nome });
-          }
-        }
-      }
-
-      // 2. Buscar o base64 de cada anexo na coleção 'anexos' do Firestore
-      const anexosComBase64 = await Promise.all(
-        anexosParaBuscar.map(async (a) => {
+          if (!a.anexoId) continue;
           try {
             const snap = await getDoc(firestoreDoc(db, 'anexos', a.anexoId));
-            if (!snap.exists()) return null;
+            if (!snap.exists()) continue;
             const { base64, tipo } = snap.data();
-            return { base64, tipo: tipo || a.tipo, nome: a.nome, docNome: a.docNome };
-          } catch {
-            return null;
-          }
-        })
-      );
-      const anexosValidos = anexosComBase64.filter((a): a is NonNullable<typeof a> => a !== null);
+            if (base64) anexosValidos.push({ base64, tipo: tipo || a.tipo, nome: a.nome, docNome: d.nome });
+          } catch { /* pula anexo com erro */ }
+        }
+      }
 
       // 3. Enviar para a Vercel Function (gera PDF com os anexos e envia o e-mail)
       const res = await fetch('/api/enviar-email', {
@@ -1688,14 +1688,40 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
 
   async function removerAnexo(docId: number, anexoId: string) {
     try {
-      await deleteDoc(firestoreDoc(db, 'anexos', anexoId));
+      // 1. Remove o documento de anexo da coleção 'anexos'
+      if (anexoId) await deleteDoc(firestoreDoc(db, 'anexos', anexoId));
+
+      // 2. Atualiza a lista local de anexos do documento
       const novosDocs = cliente.docs.map(d => {
         if (d.id !== docId) return d;
         const novosAnexos = (d.anexos || []).filter(a => a.anexoId !== anexoId);
-        return { ...d, anexos: novosAnexos, arquivoNome: novosAnexos[0]?.nome, arquivoData: novosAnexos[0]?.data };
+        // Remove também campos legados se era o único anexo
+        const { arquivoBase64: _b, arquivoNome: _n, arquivoTipo: _t, arquivoData: _d, anexoId: _id, ...resto } = d as any;
+        return {
+          ...resto,
+          id: d.id,
+          nome: d.nome,
+          sub: d.sub,
+          entregue: d.entregue,
+          observacao: d.observacao,
+          anexos: novosAnexos,
+          ...(novosAnexos.length > 0 ? { arquivoNome: novosAnexos[0].nome, arquivoData: novosAnexos[0].data } : {}),
+        };
       });
+
+      // 3. Salva no Firestore sem base64 embutido (apenas metadados)
+      const docsParaSalvar = novosDocs.map(({ arquivoBase64: _b, ...d }: any) => d);
+      await updateDoc(firestoreDoc(db, 'clientes', cliente.id), {
+        docs: docsParaSalvar,
+        ultimaAtualizacao: Date.now(),
+      });
+
+      // 4. Atualiza estado local
       onAtualizar({ ...cliente, docs: novosDocs });
-    } catch { alert('Erro ao remover anexo.'); }
+    } catch (e) {
+      console.error('Erro ao remover anexo:', e);
+      alert('Erro ao remover anexo.');
+    }
   }
 
   function alterarStatus(novoStatus: StatusCliente) {
