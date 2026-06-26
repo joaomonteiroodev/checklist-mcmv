@@ -1823,7 +1823,9 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
   const entregues = cliente.docs.filter(d => d.entregue).length;
   const total = cliente.docs.length;
   const pct = total > 0 ? Math.round((entregues / total) * 100) : 0;
-  const waLink = `https://wa.me/${formatarTelefoneWA(cliente.telefone)}`;
+  const primeiroNome = cliente.nome.trim().split(/\s+/)[0];
+  const msgWA = `Oi, ${primeiroNome}! Tudo bem? Sou ${cliente.corretorNome?.trim().split(/\s+/)[0] || 'seu corretor'}, seu corretor no ${cliente.empreendimento || 'empreendimento'}. Estou finalizando sua documentação e ainda faltam alguns documentos pra dar continuidade ao processo. Pode me enviar quando tiver um momento? Qualquer dúvida é só falar! 😊`;
+  const waLink = `https://wa.me/${formatarTelefoneWA(cliente.telefone)}?text=${encodeURIComponent(msgWA)}`;
   const corStatus = STATUS_CORES[cliente.status] || STATUS_CORES['Em atendimento'];
 
   async function enviarEmail() {
