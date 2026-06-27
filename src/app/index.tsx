@@ -32,7 +32,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { auth, db } from '../firebaseConfig';
+import { auth, db, storage } from '../firebaseConfig';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 
 // ─── CORES CERTUS ─────────────────────────────────────────────────────────────
 const C = {
@@ -1875,20 +1876,28 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
         }
       }
 
-      // 2. Buscar o base64 de cada anexo na coleção 'anexos' do Firestore
-      const anexosComBase64 = await Promise.all(
+      // 2. Buscar URL ou base64 de cada anexo na coleção 'anexos' do Firestore
+      const anexosComDados = await Promise.all(
         anexosParaBuscar.map(async (a) => {
           try {
             const snap = await getDoc(firestoreDoc(db, 'anexos', a.anexoId));
             if (!snap.exists()) return null;
-            const { base64, tipo } = snap.data();
-            return { base64, tipo: tipo || a.tipo, nome: a.nome, docNome: a.docNome };
+            const dados = snap.data();
+            // Novo formato: URL do Storage
+            if (dados.url) {
+              return { url: dados.url, tipo: dados.tipo || a.tipo, nome: a.nome, docNome: a.docNome };
+            }
+            // Formato legado: base64
+            if (dados.base64) {
+              return { base64: dados.base64, tipo: dados.tipo || a.tipo, nome: a.nome, docNome: a.docNome };
+            }
+            return null;
           } catch {
             return null;
           }
         })
       );
-      const anexosValidos = anexosComBase64.filter((a): a is NonNullable<typeof a> => a !== null);
+      const anexosValidos = anexosComDados.filter((a): a is NonNullable<typeof a> => a !== null);
 
       // 3. Enviar para a Vercel Function (gera PDF com os anexos e envia o e-mail)
       const res = await fetch('/api/enviar-email', {
@@ -1920,29 +1929,44 @@ function ChecklistScreen({ cliente, voltar, onAtualizar, onExcluir, userEmail }:
     onAtualizar({ ...cliente, docs: novosDocs });
   }
 
-  async function salvarAnexo(id: number, base64: string, nome: string, tipo: string, data: number) {
+  async function salvarAnexo(id: number, file: File) {
     try {
+      const data = Date.now();
+      const storageRef = ref(storage, `anexos/${cliente.id}/${id}/${data}_${file.name}`);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+      const storagePath = storageRef.fullPath;
+
       const anexoRef = await addDoc(collection(db, 'anexos'), {
         clienteId: cliente.id,
         docId: id,
-        base64,
-        nome,
-        tipo,
+        url,
+        storagePath,
+        nome: file.name,
+        tipo: file.type,
         data,
       });
-      const novoAnexo: Anexo = { anexoId: anexoRef.id, nome, tipo, data };
+      const novoAnexo: Anexo = { anexoId: anexoRef.id, nome: file.name, tipo: file.type, data };
       const novosDocs = cliente.docs.map(d =>
         d.id === id
-          ? { ...d, entregue: true, anexos: [...(d.anexos || []), novoAnexo], arquivoNome: nome, arquivoData: data }
+          ? { ...d, entregue: true, anexos: [...(d.anexos || []), novoAnexo], arquivoNome: file.name, arquivoData: data }
           : d
       );
       onAtualizar({ ...cliente, docs: novosDocs });
-    } catch { alert('Erro ao salvar anexo.'); }
+    } catch (e) { console.error(e); alert('Erro ao salvar anexo.'); }
   }
 
   async function removerAnexo(docId: number, anexoId: string) {
     try {
-      if (anexoId) await deleteDoc(firestoreDoc(db, 'anexos', anexoId));
+      if (anexoId) {
+        try {
+          const snap = await getDoc(firestoreDoc(db, 'anexos', anexoId));
+          if (snap.exists() && snap.data().storagePath) {
+            await deleteObject(ref(storage, snap.data().storagePath));
+          }
+        } catch {}
+        await deleteDoc(firestoreDoc(db, 'anexos', anexoId));
+      }
       const novosDocs = cliente.docs.map(d => {
         if (d.id !== docId) return d;
         const novosAnexos = (d.anexos || []).filter(a => a.anexoId !== anexoId);
@@ -2302,7 +2326,7 @@ function DocItem({ doc, onToggle, onSalvarObs, onSalvarAnexo, onRemoverAnexo }: 
   doc: Documento;
   onToggle: (id: number) => void;
   onSalvarObs: (id: number, obs: string) => void;
-  onSalvarAnexo: (id: number, base64: string, nome: string, tipo: string, data: number) => void;
+  onSalvarAnexo: (id: number, file: File) => Promise<void>;
   onRemoverAnexo: (docId: number, anexoId: string) => void;
 }) {
   const [expandido, setExpandido] = useState(false);
@@ -2325,13 +2349,7 @@ function DocItem({ doc, onToggle, onSalvarObs, onSalvarAnexo, onRemoverAnexo }: 
   }
 
   async function processarArquivo(file: File) {
-    if (file.size > 4 * 1024 * 1024) { alert('Arquivo muito grande. Máximo 4MB.'); return; }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = (reader.result as string).split(',')[1];
-      onSalvarAnexo(doc.id, base64, file.name, file.type, Date.now());
-    };
-    reader.readAsDataURL(file);
+    await onSalvarAnexo(doc.id, file);
   }
 
   function handleAnexar() {
@@ -2380,7 +2398,19 @@ function DocItem({ doc, onToggle, onSalvarObs, onSalvarAnexo, onRemoverAnexo }: 
     try {
       const snap = await getDoc(firestoreDoc(db, 'anexos', a.anexoId));
       if (!snap.exists()) { alert('Arquivo não encontrado.'); return; }
-      const { base64, tipo } = snap.data();
+      const dadosAnexo = snap.data();
+      // Suporte a URL (novo) e base64 (legado)
+      let srcUrl = dadosAnexo.url || '';
+      if (!srcUrl && dadosAnexo.base64) {
+        const byteChars2 = atob(dadosAnexo.base64);
+        const byteNums = new Array(byteChars2.length);
+        for (let i = 0; i < byteChars2.length; i++) byteNums[i] = byteChars2.charCodeAt(i);
+        const byteArray = new Uint8Array(byteNums);
+        const blob = new Blob([byteArray], { type: dadosAnexo.tipo || 'image/jpeg' });
+        srcUrl = URL.createObjectURL(blob);
+      }
+      if (srcUrl) { window.open(srcUrl, '_blank'); return; }
+      const { base64, tipo } = dadosAnexo;
       const byteChars = atob(base64);
       const byteNums = new Array(byteChars.length).fill(0).map((_, i) => byteChars.charCodeAt(i));
       const blob = new Blob([new Uint8Array(byteNums)], { type: tipo });
